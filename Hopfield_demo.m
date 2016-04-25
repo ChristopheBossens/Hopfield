@@ -1,6 +1,5 @@
 %% Construct a default network and generate a pattern matrix
 clc;clear
-cd 'C:\Users\Christophe\Dropbox\Code\Neuronal dynamics\Chapter 17. Memory and attractor dynamics'
 
 hopfield = Hopfield;
 nPatterns = 32;
