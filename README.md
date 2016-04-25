@@ -5,7 +5,7 @@ The Hopfield network is a classical recurrent artificial neural network that is 
 In this repository I will collect code for simulations that relate to several research papers on Hopfield neural networks. To this end, I have developed a general purpose Hopfield model class in Matlab that easily allows to change different parameters of the model and I have used this class to replicate the results of several papers. My hope is that by collecting these different modifications and extensions can provide a starting point for future research and simulation studies.
 
 # How to use the code
-'''matlab
+```matlab
 % Create a new Hopfield network
 myHopfield = Hopfield;
 
@@ -27,5 +27,17 @@ weights = hopfield.GetWeightMatrix()
 
 % Network can be reset using
 myHopfield.ResetWeights()
-'''
+```
+
+# Example result
+The following result was obtained by running the Hopfield_demo.m script. Patterns are loaded into the network sequentially and after each pattern is loaded we tested if the previous patterns if all loaded patterns were stable states. This was done by setting the network state to each pattern, iterating untill the network is stable and calculating the degree of overlap with the input pattern.
+
 ![Hopfield demo](/hopfield_demo.jpg?raw=true)
+
+
+# Papers in progress:
+- Gernuschi-Frias, B., & Segura, E. C. (1993). Concept learning in Hopfield associative memories trained with noisy examples using the Hebb rule. Proceedings of 1993 international Joint Conference on Neural Networks
+
+- Tsodyks, M. V., & Feigl'man, M. V. (1988). The enhanced storage capacity in neural networks with low activity level. Europhysics Letters, 6, 101.105.
+
+- Horn, D., & Rupping, E. (1993). Neural network modeling of memory deterioration in Alzheimer's disease. Neural Computation, 5, 736-749.
