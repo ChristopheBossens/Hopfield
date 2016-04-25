@@ -94,7 +94,7 @@ classdef Hopfield < handle
             end
             
             obj.synapseWeights = obj.synapseWeights + C.*(nextPattern*nextPattern');
-            if nargin == 5
+            if nargin == 4
                 obj.synapseWeights(obj.synapseWeights(:) < -A) = -A;
                 obj.synapseWeights(obj.synapseWeights(:) > A) = A;
             end
