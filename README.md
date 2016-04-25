@@ -4,4 +4,28 @@ The Hopfield network is a classical recurrent artificial neural network that is 
 
 In this repository I will collect code for simulations that relate to several research papers on Hopfield neural networks. To this end, I have developed a general purpose Hopfield model class in Matlab that easily allows to change different parameters of the model and I have used this class to replicate the results of several papers. My hope is that by collecting these different modifications and extensions can provide a starting point for future research and simulation studies.
 
+# How to use the code
+'''matlab
+% Create a new Hopfield network
+myHopfield = Hopfield;
+
+% Create a pattern of size 10 in which 50% of the units are active
+pattern = myHopfield.GeneratePattern(10,0.5)
+
+% Add a pattern to the model
+myHopfield.AddPattern(pattern);
+
+% Create a distorted version of a pattern
+distortedPattern = myHopfield.DistortPattern(pattern);
+
+% Perform a single update iteration. In 'async' mode, each unit is updated
+% sequentially (in random order). In 'sync' mode, all units are updated simultaneously
+networkState = myHopfield.Iterate(distortedPattern, 'async')
+
+% Network weights can be obtained with
+weights = hopfield.GetWeightMatrix()
+
+% Network can be reset using
+myHopfield.ResetWeights()
+'''
 ![Hopfield demo](/hopfield_demo.jpg?raw=true)
