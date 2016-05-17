@@ -156,6 +156,32 @@ classdef Hopfield < handle
             end
         end
         
+        % Performs multiple iteration steps until the network units no
+        % longer change between two succesive updates. The final network
+        % state is return together with the number of iterations it took to
+        % get there
+        function [updatedState,it] = Converge(obj, initialState, method, threshold)
+            if nargin == 2
+                method = 'async';
+            elseif nargin == 3
+                threshold = 0;
+            end
+            
+            if (size(initialState,1) == 2)
+                initialState = initialState';
+            end
+            
+            it = 0;
+            updatedState = initialState;
+            initialState = zeros(size(updatedState));
+            while sum(initialState ~=  updatedState) > 0
+                initialState = updatedState;
+                updatedState = obj.Iterate(initialState,method,threshold);
+                it = it + 1;
+            end
+        end
+        
+        % Returns the energy associated with a specific network state
         function energy = GetEnergy(obj, networkState)
             if (size(networkState,2) > 1)
                 networkState = networkState';
@@ -164,16 +190,16 @@ classdef Hopfield < handle
             energy = -sum(sum(obj.synapseWeights.*(networkState*networkState')));
         end
         
-        % Probe the network by starting with different initial random
-        % states and keep track of which network states it converges to
-        function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,p,threshold,activityValues)
+        % Probe the network for the existance of spurious states. For this,
+        % a number of random patterns are generated with specified
+        % probability of activation. The network is presented with each of
+        % these patterns and allowed to settle into a stable state. The
+        % number of different states together with their final values is
+        % recorded
+        
+        function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
             if nargin == 2
-                p = 0.5;
-                threshold = 0;
-                activityValues = [-1 1];
-            elseif nargin == 3
-                threshold = 0;
-                activityValues = [-1 1];
+                patternActivity = 0.5;
             end
             
             stableStates = zeros(nRandomPatterns,size(obj.synapseWeights,1));
@@ -181,23 +207,12 @@ classdef Hopfield < handle
             nDistinctStates = 0;
             
             for idx = 1:nRandomPatterns
-                netInput = activityValues(1).*ones(1,size(obj.synapseWeights,1));
-                activityIdx = randperm(size(obj.synapseWeights,1));
-                netInput(activityIdx(1:round(p*length(activityIdx)))) = activityValues(2);
+                randomPattern = obj.GeneratePattern(size(obj.synapseWeights,1),patternActivity);
+                output = obj.Converge(randomPattern,'async');
                 
-                converged = -1;
-                while converged == -1
-                    netOutput = obj.Iterate(netInput,'async',threshold,activityValues);
-                    if (sum(netInput-netOutput) == 0)
-                        converged = 1;
-                    else
-                        netInput = netOutput;
-                    end
-                end
-                
-                patternIdx = find(ismember(stableStates,netOutput,'rows') == 1);
+                patternIdx = find(ismember(stableStates,output,'rows') == 1);
                 if (isempty(patternIdx))
-                    patternIdx = find(ismember(stableStates,-1.*netOutput,'rows') == 1);
+                    patternIdx = find(ismember(stableStates,-1.*output,'rows') == 1);
                     if (isempty(patternIdx))
                         nDistinctStates = nDistinctStates + 1;
                         patternIdx = nDistinctStates;
@@ -205,7 +220,7 @@ classdef Hopfield < handle
                 end
 
                 stateHist(patternIdx) = stateHist(patternIdx) + 1;
-                stableStates(patternIdx,:) = netOutput;
+                stableStates(patternIdx,:) = output;
             end
             stateHist = stateHist(1:nDistinctStates);
             stableStates = stableStates(1:nDistinctStates,:);
