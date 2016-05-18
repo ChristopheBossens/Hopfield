@@ -7,4 +7,4 @@ Here we applied the procedure described in Gernuschi-Frias, B., & Segura, E. C. 
 ```
 
 
-![Concept learning](/ConceptLearning/concept_learning.jpg?raw=true)
+![Concept learning](/ConceptLearning/Concept_learning.jpg?raw=true)
