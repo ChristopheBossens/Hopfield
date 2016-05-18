@@ -36,7 +36,6 @@ The following result was obtained by running the Hopfield_demo.m script. Pattern
 
 
 # Papers in progress:
-- Gernuschi-Frias, B., & Segura, E. C. (1993). Concept learning in Hopfield associative memories trained with noisy examples using the Hebb rule. Proceedings of 1993 international Joint Conference on Neural Networks
 
 - Tsodyks, M. V., & Feigl'man, M. V. (1988). The enhanced storage capacity in neural networks with low activity level. Europhysics Letters, 6, 101.105.
 
