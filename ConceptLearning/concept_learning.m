@@ -3,7 +3,6 @@
 % associative memories trained with noisy examples using the Hebb rule.
 % Proceedings of 1993 international Joint Conference on Neural Networks
 clc;clear;
-cd 'C:\Users\Christophe\Documents\GitHub\Hopfield'
 hopfield = Hopfield;
 networkSize = 128;
 nExemplars = 64;
@@ -48,10 +47,10 @@ for exemplarIndex = 1:nExemplars
 end
 %% Plot the data
 clf,
-subplot(2,2,1),imshow(overlapMatrix',[]),colorbar,title('Pattern overlap')
-subplot(2,2,2),imshow(conceptOverlapMatrix',[]),colorbar,title('Overlap with concept')
-subplot(2,2,3),plot(conceptOverlapVector),title('Concept pattern overlap')
-subplot(2,2,4),plot(spuriousStatesVector),title('Spurious states detected')
+subplot(2,2,1),imshow(overlapMatrix',[]),colorbar,title('Pattern overlap'),xlabel('Training pattern index'),ylabel('Test pattern index')
+subplot(2,2,2),imshow(conceptOverlapMatrix',[]),colorbar,title('Overlap with concept'),xlabel('Training pattern index'),ylabel('Test pattern index')
+subplot(2,2,3),plot(conceptOverlapVector),title('Concept pattern overlap'),xlabel('# Exemplars added'),ylabel('Prototype pattern overlap')
+subplot(2,2,4),plot(spuriousStatesVector),title('Spurious states detected'),xlabel('# Exemplars added'),ylabel('# Spurious states')
 set(gca,'YLim',[0 max(spuriousStatesVector)])
 colormap jet
 
