@@ -36,8 +36,8 @@ The following result was obtained by running the Hopfield_demo.m script. Pattern
 
 
 # Papers in progress:
-- Gernuschi-Frias, B., & Segura, E. C. (1993). Concept learning in Hopfield associative memories trained with noisy examples using the Hebb rule. Proceedings of 1993 international Joint Conference on Neural Networks
-
-- Tsodyks, M. V., & Feigl'man, M. V. (1988). The enhanced storage capacity in neural networks with low activity level. Europhysics Letters, 6, 101.105.
-
 - Horn, D., & Rupping, E. (1993). Neural network modeling of memory deterioration in Alzheimer's disease. Neural Computation, 5, 736-749.
+
+- Zochowski, M., Lewenstein, M., & Nowak, A. (1993). A memory which tentatively forgets. Journal of Physics A, 2099-2112.
+
+- Morita, M. (1993). Associative memory with nonmonotone dynamics. Neural Networks, 6, 115-126.

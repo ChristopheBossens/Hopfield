@@ -18,21 +18,29 @@ classdef Hopfield < handle
         % patternModel: 'S' or 'V' for pattern values [-1 1] or [0 1]
         % activityModel: 'S' or 'V' for activity values [-1 1] or [0 1]
         function obj = Hopfield(patternModel, activityModel, selfConnections)
-            if nargin == 0
-                obj.patternModel = 'S';
-                obj.activityModel = 'S';
-                obj.selfConnections = 'noself';
-            elseif nargin == 2
-                obj.patternModel = patternModel;
-                obj.activityModel = activityModel;
-                obj.selfConnections = 'noself';
-            elseif nargin == 3
-                obj.patternModel = patternModel;
-                obj.activityModel = activityModel;
-                obj.selfConnections = selfConnections;
-            else
-                display('Incorrect number of parameters');
+            if nargin < 3
+                selfConnections = 'noself';
             end
+            if nargin < 2
+                activityModel = 'S';
+            end
+            if nargin < 1
+                patternModel = 'S';
+            end
+            
+            if ~(strcmp(activityModel,'V') || strcmp(activityModel,'S'))
+                display('Unrecognized activity model. Resorting to default');
+                activityModel = 'S';
+            end
+
+           if ~(strcmp(patternModel,'V') || strcmp(patternModel,'S'))
+                display('Unrecognized pattern model. Resorting to default');
+                patternModel = 'S';
+           end
+            
+            obj.patternModel = patternModel;
+            obj.activityModel = activityModel;
+            obj.selfConnections = selfConnections;
             
             if obj.activityModel =='S'
                 obj.activityValues = [-1 1];
@@ -45,6 +53,9 @@ classdef Hopfield < handle
         % patternLength: length of the pattern
         % patternActivty: proportion of active units in the pattern
         function pattern = GeneratePattern(obj,patternLength, patternActivity)
+            if nargin == 2
+                patternActivity = 0.5;
+            end
             pattern = -1.*ones(1,patternLength);
             activityIdx = randperm(patternLength);
             pattern(activityIdx(1:round(patternLength*patternActivity))) = -1.*pattern(activityIdx(1:round(patternLength*patternActivity)));
@@ -106,8 +117,13 @@ classdef Hopfield < handle
                 end
             end
             
-            % Store the pattern
-            obj.storedPatterns = [obj.storedPatterns nextPattern];
+            % Store the pattern. Because low activity patterns need to be
+            % modified by the user, we apply a small trick so that the
+            % original pattern values are stored
+            M = mean(nextPattern);
+            nextPattern(nextPattern > M) = obj.activityValues(2);
+            nextPattern(nextPattern < M) = obj.activityValues(1);
+            obj.storedPatterns = [obj.storedPatterns; nextPattern'];
         end
 
         % Resets the weight matrix to zero
@@ -128,6 +144,7 @@ classdef Hopfield < handle
         function outputState = Iterate(obj, initialState, method,threshold)
             if nargin == 2
                 method = 'async';
+                threshold = 0;
             elseif nargin == 3
                 threshold = 0;
             end
@@ -136,18 +153,20 @@ classdef Hopfield < handle
                 initialState = initialState';
             end
             
+            effectiveThreshold = threshold;
             outputState = initialState;
             switch method
                 case 'sync'
                     inputPotential = obj.synapseWeights*initialState';
                     
-                    outputState( (inputPotential-threshold) > 0) = obj.activityValues(2);
-                    outputState( (inputPotential-threshold) <= 0) = obj.activityValues(1);
+                    outputState( (inputPotential-threshold) > threshold) = obj.activityValues(2);
+                    outputState( (inputPotential-threshold) <= threshold) = obj.activityValues(1);
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
                     for unitIdx = 1:length(updateOrder)
                         inputPotential = obj.synapseWeights(updateOrder(unitIdx),:)*outputState';
-                        if ( (inputPotential-threshold) > threshold)
+                           
+                        if ( (inputPotential-effectiveThreshold) > threshold)
                             outputState(updateOrder(unitIdx)) = obj.activityValues(2);
                         else
                             outputState(updateOrder(unitIdx)) = obj.activityValues(1);
@@ -163,6 +182,7 @@ classdef Hopfield < handle
         function [updatedState,it] = Converge(obj, initialState, method, threshold)
             if nargin == 2
                 method = 'async';
+                threshold = 0;
             elseif nargin == 3
                 threshold = 0;
             end
@@ -196,7 +216,6 @@ classdef Hopfield < handle
         % these patterns and allowed to settle into a stable state. The
         % number of different states together with their final values is
         % recorded
-        
         function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
             if nargin == 2
                 patternActivity = 0.5;
@@ -224,6 +243,50 @@ classdef Hopfield < handle
             end
             stateHist = stateHist(1:nDistinctStates);
             stableStates = stableStates(1:nDistinctStates,:);
+        end
+        
+        % Returns the postsynaptic potential values for a given neuron
+        function postsynapticPotentials = GetInputPotential(obj, currentState, neuronIndex)
+            postsynapticPotentials = sum(obj.synapseWeights(neuronIndex,:).*currentState);
+        end
+        
+        % Returns the input potential for active and inactive neurons in
+        % the given state
+        function [activePotentials,inactivePotentials] = GetActivityPotentials(obj,currentState)
+            if size(currentState,1) < size(currentState,2)
+                currentState = currentState';
+            end
+            
+            activeUnits = find(currentState == obj.activityValues(2));
+            inactiveUnits = find(currentState == obj.activityValues(1));
+            
+            activePotentials = obj.synapseWeights(activeUnits,activeUnits)*currentState(activeUnits);
+            inactivePotentials = obj.synapseWeights(inactiveUnits,inactiveUnits)*currentState(inactiveUnits);
+        end
+        
+        % Returns the distribution of active and inactive neurons for all
+        % patterns in stored in the network
+        function [activeDistribution, inactiveDistribution,binValues] = GetActivityDistribution(obj,nBins)
+            if nargin == 1
+                nBins = 100;
+            end
+            
+            nPatterns = size(obj.storedPatterns,1);
+            activeUnitPotentials = [];
+            inactiveUnitPotentials = [];
+            for patternIndex = 1:nPatterns
+                [aup, iup] = obj.GetActivityPotentials(obj.storedPatterns(patternIndex,:));
+                activeUnitPotentials = [activeUnitPotentials aup];
+                inactiveUnitPotentials = [inactiveUnitPotentials iup];
+            end
+            
+            maxBin = max([activeUnitPotentials(:); inactiveUnitPotentials(:)]);
+            minBin = min([activeUnitPotentials(:); inactiveUnitPotentials(:)]);
+            binValues = linspace(minBin,maxBin,nBins);
+            
+            activeDistribution = hist(activeUnitPotentials(:),binValues);
+            inactiveDistribution = hist(inactiveUnitPotentials(:),binValues);
+            
         end
     end
     
