@@ -87,13 +87,12 @@ clf,
 subplot(2,1,1),imshow(unadjustedCapacity,[cMin cMax]),axis on
 set(gca,'XTick',[1 round(nActivityValues/2) nActivityValues],'XTickLabel',[meanActivityValues(1) meanActivityValues(round(nActivityValues/2)) meanActivityValues(end)])
 set(gca,'YTick',[1 round(nThresholdValues/2) nThresholdValues],'YTickLabel',[thresholdValues(1) thresholdValues(round(nThresholdValues/2)) thresholdValues(end)])
-xlabel('Mean pattern activity'),ylabel('Activation threshold'),title('Unadjusted S model')
+xlabel('Mean pattern activity'),ylabel('Activation threshold'),title('Unadjusted patterns'),h1 = colorbar,ylabel(h1,'Capacity')
 subplot(2,1,2),imshow(adjustedCapacity,[cMin cMax])
 set(gca,'XTick',[1 round(nActivityValues/2) nActivityValues],'XTickLabel',[meanActivityValues(1) meanActivityValues(round(nActivityValues/2)) meanActivityValues(end)])
 set(gca,'YTick',[1 round(nThresholdValues/2) nThresholdValues],'YTickLabel',[thresholdValues(1) thresholdValues(round(nThresholdValues/2)) thresholdValues(end)])
-xlabel('Mean pattern activity'),ylabel('Activation threshold'),title('Adjusted S model')
+xlabel('Mean pattern activity'),ylabel('Activation threshold'),title('Adjusted patterns'),h2 = colorbar,ylabel(h2,'Capacity')
 colormap jet, axis on
-colorbar
 %% The following is a small illustration of why threshold values need to be
 % adjusted in low activity patterns.
 clear;
@@ -101,19 +100,20 @@ networkSize = 300;
 nExemplars = 10;
 
 hopfield = Hopfield();
-p = 0.5;
+p = 0.1;
 
 exemplarMatrix = zeros(nExemplars,networkSize);
 for exemplarIndex = 1:nExemplars
     exemplarMatrix(exemplarIndex,:) = hopfield.GeneratePattern(networkSize,p);
-    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(2*p-1),1/networkSize);
+    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-mean(exemplarMatrix(exemplarIndex,:)),7/networkSize);
 end
-
 [activeDistribution, inactiveDistribution, binValues] = hopfield.GetActivityDistribution();
 
-clf,hold on
-bar(binValues,activeDistribution,'g'),title('Active unit postsynaptic potential')
-bar(binValues,inactiveDistribution,'r'),title('Inactive unit postsynaptic potential')
+clf,
+hold on
+bar(binValues,activeDistribution,'g')
+bar(binValues,inactiveDistribution,'r')
 line([0 0],[0 max([activeDistribution inactiveDistribution])],'Color','k','LineWidth',2,'LineStyle',':')
 set(gca,'XLim',[binValues(1) binValues(end)]),xlabel('Input potential'),ylabel('Count')
+title(['Active vs inactive unit potentials, p = ' num2str(p)])
 legend('Active unit','Inactive unit','Threshold','Location','NorthEastOutside')
