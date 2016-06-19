@@ -6,76 +6,52 @@ classdef Hopfield < handle
         synapseWeights = [];
         storedPatterns = [];
         
-        patternModel = '';
-        activityModel = '';
-        selfConnections= '';
+        unitModel = 'S';
+        selfConnections= 'noself';
+        clipMode  = 'noclip';
+        clipValue = 1;
+        updateMode = 'async';
         
-        activityValues = [];
+        networkSize = 0;
+        unitThreshold = 0;
+        unitValues = [-1 1];
+        
+        maxIterations = 100;
     end
     
     methods
-        % Initializes a Hopfield network. 
-        % patternModel: 'S' or 'V' for pattern values [-1 1] or [0 1]
-        % activityModel: 'S' or 'V' for activity values [-1 1] or [0 1]
-        function obj = Hopfield(patternModel, activityModel, selfConnections)
-            if nargin < 3
-                selfConnections = 'noself';
-            end
-            if nargin < 2
-                activityModel = 'S';
-            end
-            if nargin < 1
-                patternModel = 'S';
-            end
-            
-            if ~(strcmp(activityModel,'V') || strcmp(activityModel,'S'))
-                display('Unrecognized activity model. Resorting to default');
-                activityModel = 'S';
-            end
-
-           if ~(strcmp(patternModel,'V') || strcmp(patternModel,'S'))
-                display('Unrecognized pattern model. Resorting to default');
-                patternModel = 'S';
-           end
-            
-            obj.patternModel = patternModel;
-            obj.activityModel = activityModel;
-            obj.selfConnections = selfConnections;
-            
-            if obj.activityModel =='S'
-                obj.activityValues = [-1 1];
-            else
-                obj.activityValues = [0 1];
-            end
+        % Initializes a Hopfield network of a given size
+        function obj = Hopfield(networkSize)
+            obj.networkSize = networkSize;
+            obj.synapseWeights = zeros(obj.networkSize);
         end
         
         % Generates a new pattern
-        % patternLength: length of the pattern
         % patternActivty: proportion of active units in the pattern
-        function pattern = GeneratePattern(obj,patternLength, patternActivity)
-            if nargin == 2
+        function pattern = GeneratePattern(obj,patternActivity)
+            if nargin == 1
                 patternActivity = 0.5;
             end
-            pattern = -1.*ones(1,patternLength);
-            activityIdx = randperm(patternLength);
-            pattern(activityIdx(1:round(patternLength*patternActivity))) = -1.*pattern(activityIdx(1:round(patternLength*patternActivity)));
+            pattern = -1.*ones(1,obj.networkSize);
+            activityIdx = randperm(obj.networkSize);
+            pattern(activityIdx(1:round(obj.networkSize*patternActivity))) = -1.*pattern(activityIdx(1:round(obj.networkSize*patternActivity)));
             
-            if obj.patternModel == 'V'
+            if obj.unitModel == 'V'
                 pattern = (pattern + 1)./2;
             end
         end
         
         % Takes the input and flips the state of a randum number of units
-        % pattern: the pattern to be changed
+        % inputPattern: the pattern to be changed
         % noiseLevel: proportion of units that will be flipped
         function outputPattern = DistortPattern(obj, inputPattern, noiseLevel)
             flipIndices = randperm(length(inputPattern));
             flipIndices = flipIndices(1:round(noiseLevel*length(inputPattern)));
             
             outputPattern = inputPattern;
-            if (obj.patternModel == 'S')
+            if (obj.unitModel == 'S')
                 outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
-            elseif (obj.patternModel == 'V')
+            elseif (obj.unitModel == 'V')
                 outputPattern = (2.*outputPattern)-1;
                 outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
                 outputPattern = (outputPattern+1)./2;
@@ -84,19 +60,14 @@ classdef Hopfield < handle
         
         % Add the pattern nextPattern to the weight matrix
         % C: normalization constant for  the weights, defaults to 1/N
-        % A: if specified, will clip abs(synapseWeights) to A
-        function AddPattern(obj, nextPattern, C, A)
+        function AddPattern(obj, nextPattern, C)
             if nargin == 2
                 C = 1/length(nextPattern);
             end
             
-            % Initialize weight matrix if this is the first pattern
-            if isempty(obj.synapseWeights)
-                obj.synapseWeights = zeros(length(nextPattern));
-            else
-                if size(obj.synapseWeights) ~= length(nextPattern)
-                    error('Pattern size not consistent with current weight matrix');
-                end
+            % Check if pattern has correct length
+            if size(obj.synapseWeights) ~= length(nextPattern)
+                error('Pattern size not consistent with current weight matrix');
             end
             
             % Pattern should be Nx1 vector
@@ -105,12 +76,14 @@ classdef Hopfield < handle
             end
             
             obj.synapseWeights = obj.synapseWeights + C.*(nextPattern*nextPattern');
-            if nargin == 4
-                obj.synapseWeights(obj.synapseWeights(:) < -A) = -A;
-                obj.synapseWeights(obj.synapseWeights(:) > A) = A;
+            
+            % Check if clipping needs to be applied
+            if strcmp(obj.clipMode,'clip')
+                obj.synapseWeights(obj.synapseWeights(:) < -obj.clipValue) = -obj.clipValue;
+                obj.synapseWeights(obj.synapseWeights(:) > obj.clipValue) = obj.clipValue;
             end
             
-            % Removes self connections
+            % Check if self connections need to be removed
             if strcmp(obj.selfConnections,'noself')
                 for i = 1:size(obj.synapseWeights)
                     obj.synapseWeights(i,i) = 0;
@@ -121,55 +94,85 @@ classdef Hopfield < handle
             % modified by the user, we apply a small trick so that the
             % original pattern values are stored
             M = mean(nextPattern);
-            nextPattern(nextPattern > M) = obj.activityValues(2);
-            nextPattern(nextPattern < M) = obj.activityValues(1);
+            nextPattern(nextPattern > M) = obj.unitValues(2);
+            nextPattern(nextPattern < M) = obj.unitValues(1);
             obj.storedPatterns = [obj.storedPatterns; nextPattern'];
         end
 
-        % Resets the weight matrix to zero
+        % Fetch and manipulate the weight matrix manually
         function ResetWeights(obj)
             obj.storedPatterns = [];
-            obj.synapseWeights = [];
-        end
-        
+            obj.synapseWeights = zeros(obj.networkSize);
+        end   
         function result = GetWeightMatrix(obj)
             result = obj.synapseWeights;
         end
+        function SetWeightMatrix(obj, weightMatrix)
+            obj.synapseWeights = weightMatrix;
+        end
         
-        % Performs a single update iteration. For asynchronous updating,
-        % this corresponds to an update for all the units in random order
-        % initialState: initial state of the network
-        % method: 'sync' or 'async'
-        % threshold: the value to which to compare each units' activity
-        function outputState = Iterate(obj, initialState, method,threshold)
-            if nargin == 2
-                method = 'async';
-                threshold = 0;
-            elseif nargin == 3
-                threshold = 0;
+        % Configure network parameters
+        function SetUnitModel(obj,unitModel)
+            if unitModel == 'S'
+                obj.unitModel = 'S';
+                obj.unitValues = [-1 1];
+            elseif unitModel == 'V'
+                obj.unitModel = 'V';
+                obj.unitValues = [0 1];
             end
-            
+        end
+        function SetThreshold(obj,T)
+            obj.unitThreshold = T;
+        end
+        function SetAsyncMode(obj)
+            obj.updateMode = 'async';
+        end
+        function SetSyncMode(obj)
+            obj.updateMode = 'sync';
+        end
+        function EnableWeightClipping(obj, clipValue)
+            obj.clipMode = 'clip';
+            obj.clipValue = clipValue;
+        end
+        function DisableWeightClipping(obj)
+            obj.clipMode = 'noclip';
+        end
+        function EnableSelfConnections(obj)
+            obj.selfConnections = 'self';
+        end
+        function DisableSelfConnections(obj)
+            obj.selfConnections = 'noself';
+        end
+        
+        % Performs a single update iteration. 
+        % For synchronous updating, all units are updated in a single
+        % operation
+        % For asynchronous updating, all units are updated in a random
+        % order
+        function outputState = Iterate(obj, initialState)
+            threshold = obj.unitThreshold;
+            method = obj.updateMode;
+           
             if (size(initialState,1) == 2)
                 initialState = initialState';
             end
             
-            effectiveThreshold = threshold;
             outputState = initialState;
             switch method
                 case 'sync'
                     inputPotential = obj.synapseWeights*initialState';
                     
-                    outputState( (inputPotential-threshold) > threshold) = obj.activityValues(2);
-                    outputState( (inputPotential-threshold) <= threshold) = obj.activityValues(1);
+                    outputState( (inputPotential-threshold) > threshold) = obj.unitValues(2);
+                    outputState( (inputPotential-threshold) <= threshold) = obj.unitValues(1);
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
                     for unitIdx = 1:length(updateOrder)
                         inputPotential = obj.synapseWeights(updateOrder(unitIdx),:)*outputState';
                            
-                        if ( (inputPotential-effectiveThreshold) > threshold)
-                            outputState(updateOrder(unitIdx)) = obj.activityValues(2);
+                        if ( (inputPotential) > threshold)
+                            outputState(updateOrder(unitIdx)) = obj.unitValues(2);
                         else
-                            outputState(updateOrder(unitIdx)) = obj.activityValues(1);
+                            outputState(updateOrder(unitIdx)) = obj.unitValues(1);
                         end
                     end
             end
@@ -179,14 +182,7 @@ classdef Hopfield < handle
         % longer change between two succesive updates. The final network
         % state is return together with the number of iterations it took to
         % get there
-        function [updatedState,it] = Converge(obj, initialState, method, threshold)
-            if nargin == 2
-                method = 'async';
-                threshold = 0;
-            elseif nargin == 3
-                threshold = 0;
-            end
-            
+        function [updatedState,it] = Converge(obj, initialState)
             if (size(initialState,1) == 2)
                 initialState = initialState';
             end
@@ -196,8 +192,12 @@ classdef Hopfield < handle
             initialState = zeros(size(updatedState));
             while sum(initialState ~=  updatedState) > 0
                 initialState = updatedState;
-                updatedState = obj.Iterate(initialState,method,threshold);
+                updatedState = obj.Iterate(initialState);
                 it = it + 1;
+                
+                if it > obj.maxIterations
+                    break
+                end
             end
         end
         
@@ -226,8 +226,8 @@ classdef Hopfield < handle
             nDistinctStates = 0;
             
             for idx = 1:nRandomPatterns
-                randomPattern = obj.GeneratePattern(size(obj.synapseWeights,1),patternActivity);
-                output = obj.Converge(randomPattern,'async');
+                randomPattern = obj.GeneratePattern(patternActivity);
+                output = obj.Converge(randomPattern);
                 
                 patternIdx = find(ismember(stableStates,output,'rows') == 1);
                 if (isempty(patternIdx))
@@ -256,12 +256,12 @@ classdef Hopfield < handle
             if size(currentState,1) < size(currentState,2)
                 currentState = currentState';
             end
-            
-            activeUnits = find(currentState == obj.activityValues(2));
-            inactiveUnits = find(currentState == obj.activityValues(1));
-            
-            activePotentials = obj.synapseWeights(activeUnits,activeUnits)*currentState(activeUnits);
-            inactivePotentials = obj.synapseWeights(inactiveUnits,inactiveUnits)*currentState(inactiveUnits);
+                       
+            activeUnits = find(currentState >0);
+            inactiveUnits = find(currentState <= 0);
+                        
+            activePotentials = sum(obj.synapseWeights(activeUnits,activeUnits));%*currentState(activeUnits);
+            inactivePotentials = -sum(obj.synapseWeights(inactiveUnits,inactiveUnits));%*currentState(inactiveUnits);
         end
         
         % Returns the distribution of active and inactive neurons for all
@@ -290,5 +290,45 @@ classdef Hopfield < handle
         end
     end
     
+    
+    methods (Static)
+        % Takes a hopfield network and returns a pruned weight matrix
+        function prunedWeightMatrix = PruneWeightMatrix(hopnet,d)
+            prunedWeightMatrix = hopnet.GetWeightMatrix();
+
+            for rowIndex = 1:size(prunedWeightMatrix,1)
+                delIndices = randperm(size(prunedWeightMatrix,2));
+                delLimit = round(d*size(prunedWeightMatrix,2));
+                if delLimit > 0
+                    delIndices = delIndices(1:delLimit);
+                    prunedWeightMatrix(rowIndex,delIndices) = 0;
+                end
+            end
+        end
+        
+        % Takes a hopfield network and tests recollection for all patterns
+        % in the pattern matrix
+        function [pc, it] = TestPatterns(hopnet, patternMatrix, noiseLevel)
+            nPatterns = size(patternMatrix,1);
+            
+            pcVector = zeros(1,nPatterns);
+            itVector = zeros(1,nPatterns);
+            
+            for patternIndex = 1:nPatterns
+                pattern = patternMatrix(patternIndex,:);
+                noisePattern = hopnet.DistortPattern(pattern, noiseLevel);
+                
+                [finalState, nIterations] = hopnet.Converge(noisePattern, 'async');
+                itVector(patternIndex) = nIterations;
+                
+                if sum(pattern == finalState) == size(patternMatrix,2)
+                    pcVector(patternIndex) = 1;
+                end
+            end
+            
+            pc = mean(pcVector);
+            it = mean(itVector);
+        end
+    end
 end
 
