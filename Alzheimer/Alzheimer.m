@@ -1,7 +1,7 @@
 % Alzheimer modeling
 clear 
-networkSize = 256;
-alpha = 0.1;
+networkSize = 800;
+alpha = 0.05;
 p = 0.1;
 T = p*(1-p)*(1-2*p)/2;
 
@@ -64,35 +64,17 @@ overlapMatrix = zeros(length(deletionFactor),length(noiseLevel));
 iterMatrix = zeros(length(deletionFactor),length(noiseLevel));
 pcMatrix = zeros(length(deletionFactor), length(noiseLevel));
 
+originalWeightMatrix = hopfield.GetWeightMatrix();
 for delIndex = 1:length(deletionFactor)
     display(['Deletion factor: ' num2str(deletionFactor(delIndex))]);
-    deletedWeightMatrix = weightMatrix;    
-    for rowIndex = 1:size(weightMatrix,1)
-        delIndices = randperm(size(weightMatrix,2));
-        if deletionFactor(delIndex) > 0
-            delIndices = delIndices(1:deletionFactor(delIndex));
-            deletedWeightMatrix(rowIndex,delIndices) = 0;
-        end
-    end
-    
+
+    deletedWeightMatrix = hopfield.PruneWeightMatrix(originalWeightMatrix,deletionFactor./networkSize);
     hopfield.SetWeightMatrix(deletedWeightMatrix);
+    
     for noiseIndex = 1:length(noiseLevel)
-        overlapVector = zeros(1,nPatterns);
-        iterVector = zeros(1,nPatterns);
-        for patternIndex = 1:nPatterns
-            pattern = patternMatrix(patternIndex,:);
-            noisePattern = hopfield.DistortPattern(pattern, noiseLevel(noiseIndex)/networkSize);
-            
-            [finalState,nIterations] = hopfield.Converge(noisePattern, 'async',T);
-            iterVector(patternIndex) = nIterations;
-            overlapVector(patternIndex) = (1/(p*(1-p)*networkSize)).*( (pattern-p) * finalState');
-            
-            if sum(pattern==finalState) == networkSize
-                pcMatrix(delIndex,noiseIndex) = pcMatrix(delIndex, noiseIndex) + 1;
-            end
-        end
-        overlapMatrix(delIndex,noiseIndex) = mean(overlapVector);
-        iterMatrix(delIndex, noiseIndex) = mean(iterVector);
+        [pc,it] = hopfield.TestPatterns(hopfield, patternMatrix, noiseLevel(noiseIndex)/networkSize);
+        overlapMatrix(delIndex, noiseIndex) = pc;
+        iterMatrix(delIndex, noiseIndex) = it;
     end    
 end
 pcMatrix = pcMatrix./nPatterns;
@@ -118,55 +100,32 @@ colormap hot
 %% Synaptic compensation
 % For a fixed noise level, we test with different deletion factors and
 % synaptic compensation factors how the network reacts
-
-deletionFactor = round(linspace(0,networkSize,100));
-compensationFactor = (0:0.01:1);
+deletionFactor = round(linspace(0,networkSize,50));
+compensationFactor = (0:0.05:1);
 noiseLevel     = 0.2;
 
-overlapMatrix = zeros(length(deletionFactor),length(compensationFactor));
 iterMatrix = zeros(length(deletionFactor),length(compensationFactor));
 pcMatrix = zeros(length(deletionFactor), length(compensationFactor));
 
 for delIndex = 1:length(deletionFactor)
     display(['Deletion factor: ' num2str(deletionFactor(delIndex))]);
-    deletedWeightMatrix = weightMatrix;
     d = deletionFactor(delIndex)/networkSize;
     
-    for rowIndex = 1:size(weightMatrix,1)
-        delIndices = randperm(size(weightMatrix,2));
-        if deletionFactor(delIndex) > 0
-            delIndices = delIndices(1:deletionFactor(delIndex));
-            deletedWeightMatrix(rowIndex,delIndices) = 0;
-        end
-    end
+    deletedWeightMatrix = hopfield.PruneWeightMatrix(originalWeightMatrix,deletionFactor./networkSize);
+    hopfield.SetWeightMatrix(deletedWeightMatrix);
     
     
     for k = 1:length(compensationFactor)
         c = 1 + ((d*k)/(1-d));
         hopfield.SetWeightMatrix(c.*deletedWeightMatrix);
-        
-        overlapVector = zeros(1,nPatterns);
-        iterVector = zeros(1,nPatterns);
-        for patternIndex = 1:nPatterns
-            pattern = patternMatrix(patternIndex,:);
-            noisePattern = hopfield.DistortPattern(pattern, noiseLevel);
-            
-            [finalState,nIterations] = hopfield.Converge(noisePattern, 'async',T);
-            iterVector(patternIndex) = nIterations;
-            overlapVector(patternIndex) = (1/(p*(1-p)*networkSize)).*( (pattern-p) * finalState');
-            
-            if sum(pattern==finalState) == networkSize
-                pcMatrix(delIndex,k) = pcMatrix(delIndex, k) + 1;
-            end
-        end
-        overlapMatrix(delIndex,k) = mean(overlapVector);
-        iterMatrix(delIndex, k) = mean(iterVector);
+        [pc,it] = hopfield.TestPatterns(hopfield, patternMatrix, noiseLevel);
+        pcMatrix(delIndex,k) = pc;
+        iterMatrix(delIndex, k) = it;
     end    
 end
-pcMatrix = pcMatrix./nPatterns;
 %%
 clf,
-subplot(2,1,1),imshow(overlapMatrix,[]), colorbar
+subplot(2,1,1),imshow(iterMatrix,[]), colorbar
 axis on
 title('Overlap matrix')
 set(gca,'Ydir','Normal')
@@ -176,7 +135,7 @@ xlabel('k')
 ylabel('d')
 
 subplot(2,1,2),imshow(pcMatrix,[]), colorbar
-title('Iteration matrix')
+title('Percentage correct')
 % set(gca,'YDir','Normal','XTick',0:20:100,'XTickLabel', round(100.*(0:20:100)./networkSize)/100,...
 %     'YTick',0:20:100,'YTickLabel',round(100.*(0:20:100)./networkSize)/100)
 set(gca,'Ydir','Normal')
