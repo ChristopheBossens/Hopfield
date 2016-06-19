@@ -98,15 +98,16 @@ colorbar
 % adjusted in low activity patterns.
 clear;
 networkSize = 300;
-nExemplars = 10;
+nExemplars = 50;
 
-hopfield = Hopfield();
-p = 0.5;
+hopfield = Hopfield('V','V');
+p = 0.2;
 
 exemplarMatrix = zeros(nExemplars,networkSize);
 for exemplarIndex = 1:nExemplars
     exemplarMatrix(exemplarIndex,:) = hopfield.GeneratePattern(networkSize,p);
-    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(2*p-1),1/networkSize);
+    %hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(2*p-1),1/networkSize);
+    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(p),1/networkSize);
 end
 
 [activeDistribution, inactiveDistribution, binValues] = hopfield.GetActivityDistribution();
