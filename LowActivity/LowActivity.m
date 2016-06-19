@@ -14,10 +14,10 @@ clc;clear;
 networkSize = 128;
 nExemplars = 64;
 
-hopfieldUnadjusted = Hopfield();
-hopfieldAdjusted = Hopfield();
+hopfieldUnadjusted = Hopfield(networkSize);
+hopfieldAdjusted = Hopfield(networkSize);
 
-meanActivityValues = -0.95:0.01:0.95;   % Mean activity of a pattern
+meanActivityValues = -0.95:0.1:0.95;   % Mean activity of a pattern
 thresholdValues = -0.7:.025:0.7;
 
 nThresholdValues = length(thresholdValues);
@@ -32,48 +32,47 @@ for activityIndex = 1:nActivityValues
     currentActivityLevel = meanActivityValues(activityIndex);
     exemplarMatrix = zeros(nExemplars,networkSize);
     for exemplarIndex = 1:nExemplars
-        exemplarMatrix(exemplarIndex,:) = hopfieldUnadjusted.GeneratePattern(networkSize,(1+currentActivityLevel)/2);
+        exemplarMatrix(exemplarIndex,:) = hopfieldUnadjusted.GeneratePattern((1+currentActivityLevel)/2);
     end
     
     for thresholdIndex = 1:nThresholdValues
         currentThreshold = thresholdValues(thresholdIndex);
         hopfieldAdjusted.ResetWeights();
         hopfieldUnadjusted.ResetWeights();
+        hopfieldAdjusted.SetThreshold(currentThreshold);
+        hopfieldUnadjusted.SetThreshold(currentThreshold);
         
-        % Train the network with a given threshold value
-        adjustedStable = 1;
-        unadjustedStable = 1; 
+        % Train the unadjusted model 
+        unstablePatternDetected = 0;
         for trainingIndex = 1:nExemplars
-            if unadjustedStable == 1
-                hopfieldUnadjusted.AddPattern(exemplarMatrix(trainingIndex,:),1/networkSize);
-            end
-            if adjustedStable == 1
-                hopfieldAdjusted.AddPattern(exemplarMatrix(trainingIndex,:)-currentActivityLevel,1/networkSize);
-            end
-            
+            hopfieldUnadjusted.AddPattern(exemplarMatrix(trainingIndex,:),1/networkSize);
             for testIndex = 1:trainingIndex
-                if unadjustedStable == 1
-                    [resp,itUnadjusted] = hopfieldUnadjusted.Converge(exemplarMatrix(testIndex,:),'async',currentThreshold);
-                    if itUnadjusted > 1
-                        unadjustedStable = 0;
-                        unadjustedCapacity(thresholdIndex,activityIndex) = trainingIndex;
-                    end
+                [resp,itUnadjusted] = hopfieldUnadjusted.Converge(exemplarMatrix(testIndex,:));
+                if itUnadjusted > 1
+                    unstablePatternDetected = 1;
+                    unadjustedCapacity(thresholdIndex,activityIndex) = trainingIndex;
+                    break;
                 end
-                if adjustedStable == 1
-                    [resp,itAdjusted] = hopfieldAdjusted.Converge(exemplarMatrix(testIndex,:),'async',currentThreshold);
-                    if itAdjusted > 1
-                        adjustedStable = 0;
-                        adjustedCapacity(thresholdIndex,activityIndex) = trainingIndex;
-                    end
+            end
+            if unstablePatternDetected == 1
+                break;
+            end
+        end
+        
+        % Train the adjusted model
+        unstablePatternDetected = 0;
+        for trainingIndex = 1:nExemplars
+            hopfieldAdjusted.AddPattern(exemplarMatrix(trainingIndex,:)-currentActivityLevel,1/networkSize);
+            for testIndex = 1:trainingIndex
+                [resp,itAdjusted] = hopfieldAdjusted.Converge(exemplarMatrix(testIndex,:));
+                if itAdjusted > 1
+                    unstablePatternDetected = 1;
+                    adjustedCapacity(thresholdIndex,activityIndex) = trainingIndex;
+                    break;
                 end
-                
-                if unadjustedStable == 0 && adjustedStable == 0;
-                    break
-                end
-            end    
-            
-            if unadjustedStable == 0 && adjustedStable == 0;
-                break
+            end
+            if unstablePatternDetected == 1
+                break;
             end
         end
     end
@@ -93,29 +92,25 @@ set(gca,'XTick',[1 round(nActivityValues/2) nActivityValues],'XTickLabel',[meanA
 set(gca,'YTick',[1 round(nThresholdValues/2) nThresholdValues],'YTickLabel',[thresholdValues(1) thresholdValues(round(nThresholdValues/2)) thresholdValues(end)])
 xlabel('Mean pattern activity'),ylabel('Activation threshold'),title('Adjusted patterns'),h2 = colorbar,ylabel(h2,'Capacity')
 colormap jet, axis on
+
 %% The following is a small illustration of why threshold values need to be
-% adjusted in low activity patterns.
+% adjusted. For balanced patterns, the overall distribution of synaptic inputs on
+% units that should be inactive is clearly separated from the synaptic input 
+% distribution of units that should be active. A zero threshold separates both distributions
+% However, in the case of sparse activity, the distributions shift and the units that
+% need to be inactive receive synaptic input that is above zero.
 clear;
 networkSize = 300;
 nExemplars = 50;
 
-<<<<<<< HEAD
-hopfield = Hopfield('V','V');
+hopfield = Hopfield(networkSize);
+hopfield.SetUnitModel('V');
 p = 0.2;
-=======
-hopfield = Hopfield();
-p = 0.1;
->>>>>>> 9b8942cf68153d8972bba1eb3b5b3ecdb034ebaf
 
 exemplarMatrix = zeros(nExemplars,networkSize);
 for exemplarIndex = 1:nExemplars
-    exemplarMatrix(exemplarIndex,:) = hopfield.GeneratePattern(networkSize,p);
-<<<<<<< HEAD
-    %hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(2*p-1),1/networkSize);
+    exemplarMatrix(exemplarIndex,:) = hopfield.GeneratePattern(p);
     hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-(p),1/networkSize);
-=======
-    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:)-mean(exemplarMatrix(exemplarIndex,:)),7/networkSize);
->>>>>>> 9b8942cf68153d8972bba1eb3b5b3ecdb034ebaf
 end
 [activeDistribution, inactiveDistribution, binValues] = hopfield.GetActivityDistribution();
 
