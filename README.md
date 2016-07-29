@@ -6,11 +6,17 @@ In this repository I will collect code for simulations that relate to several re
 
 # How to use the code
 ```matlab
-% Create a new Hopfield network
-myHopfield = Hopfield;
+% Create a new Hopfield network with 50 units
+myHopfield = Hopfield(50);
 
-% Create a pattern of size 10 in which 50% of the units are active
-pattern = myHopfield.GeneratePattern(10,0.5)
+% The following configuration options are available
+myHopfield.SetThreshold(0.2); % Sets the unit threshold (default = 0)
+myHopfield.SetUnitModel('S'); % 'S' will use units with -1,1 activity values, 'V' will use units with 0,1
+myHopfield.SetUpdateMode(updateMode); % Update mode can be 'sync' or 'async'
+
+
+% Create a pattern in which 50% of the units are active
+pattern = myHopfield.GeneratePattern(0.5)
 
 % Add a pattern to the model
 myHopfield.AddPattern(pattern);
@@ -20,7 +26,7 @@ distortedPattern = myHopfield.DistortPattern(pattern);
 
 % Perform a single update iteration. In 'async' mode, each unit is updated
 % sequentially (in random order). In 'sync' mode, all units are updated simultaneously
-networkState = myHopfield.Iterate(distortedPattern, 'async')
+networkState = myHopfield.Iterate(distortedPattern)
 
 % Network weights can be obtained with
 weights = hopfield.GetWeightMatrix()
@@ -36,7 +42,9 @@ The following result was obtained by running the Hopfield_demo.m script. Pattern
 
 
 # Papers in progress:
-- Horn, D., & Rupping, E. (1993). Neural network modeling of memory deterioration in Alzheimer's disease. Neural Computation, 5, 736-749.
+- Hopfield, J. J., Feinstein, D. I., & Palmer, R. G. (1983). 'Unlearning' has a stabilizing effect in collective memories. Nature
+
+- Burgess, N., & Shapiro, J. (1991). Neural network models of list learning. Network, 2, 399-422.
 
 - Zochowski, M., Lewenstein, M., & Nowak, A. (1993). A memory which tentatively forgets. Journal of Physics A, 2099-2112.
 

@@ -125,11 +125,15 @@ classdef Hopfield < handle
         function SetThreshold(obj,T)
             obj.unitThreshold = T;
         end
-        function SetAsyncMode(obj)
-            obj.updateMode = 'async';
-        end
-        function SetSyncMode(obj)
-            obj.updateMode = 'sync';
+        function SetUpdateMode(obj,updateMode)
+            if updateMode == 'async'
+                obj.updateMode ='async';
+            elseif updateMode == 'sync';
+                obj.updateMode = 'sync';
+            else
+                display('Invalid update mode. Using default mode (''async'')');
+                obj.updateMode = 'async';
+            end
         end
         function EnableWeightClipping(obj, clipValue)
             obj.clipMode = 'clip';
@@ -218,7 +222,7 @@ classdef Hopfield < handle
         % these patterns and allowed to settle into a stable state. The
         % number of different states together with their final values is
         % recorded
-        function [stableStates, stateHist, potentialValues, activityValues] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
+        function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
             if nargin == 2
                 patternActivity = 0.5;
             end

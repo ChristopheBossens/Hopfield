@@ -1,13 +1,16 @@
 %% Construct a default network and generate a pattern matrix
 clc;clear
 
-hopfield = Hopfield;
+
 nPatterns = 32;
 networkSize = 64;
 
+hopfield = Hopfield(networkSize);
+patternActivity = 0.5;
+
 patternMatrix = zeros(nPatterns,networkSize);
 for patternIdx = 1:nPatterns
-    patternMatrix(patternIdx,:) = hopfield.GeneratePattern(networkSize,0.5);
+    patternMatrix(patternIdx,:) = hopfield.GeneratePattern(patternActivity);
 end
 
 
