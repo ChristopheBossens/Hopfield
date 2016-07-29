@@ -3,6 +3,7 @@ classdef Hopfield < handle
     %   Detailed explanation goes here
     
     properties
+        backupWeights  = [];
         synapseWeights = [];
         storedPatterns = [];
         
@@ -196,6 +197,7 @@ classdef Hopfield < handle
                 it = it + 1;
                 
                 if it > obj.maxIterations
+                    display('Warning: maximum number of iterations exceeded');
                     break
                 end
             end
@@ -216,7 +218,7 @@ classdef Hopfield < handle
         % these patterns and allowed to settle into a stable state. The
         % number of different states together with their final values is
         % recorded
-        function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
+        function [stableStates, stateHist, potentialValues, activityValues] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
             if nargin == 2
                 patternActivity = 0.5;
             end
@@ -244,57 +246,36 @@ classdef Hopfield < handle
             stateHist = stateHist(1:nDistinctStates);
             stableStates = stableStates(1:nDistinctStates,:);
         end
-        
-        % Returns the postsynaptic potential values for a given neuron
-        function postsynapticPotentials = GetInputPotential(obj, currentState, neuronIndex)
-            postsynapticPotentials = sum(obj.synapseWeights(neuronIndex,:).*currentState);
-        end
-        
-        % Returns the input potential for active and inactive neurons in
-        % the given state
-        function [activePotentials,inactivePotentials] = GetActivityPotentials(obj,currentState)
-            if size(currentState,1) < size(currentState,2)
-                currentState = currentState';
-            end
-                       
-            activeUnits = find(currentState >0);
-            inactiveUnits = find(currentState <= 0);
-                        
-            activePotentials = sum(obj.synapseWeights(activeUnits,activeUnits));%*currentState(activeUnits);
-            inactivePotentials = -sum(obj.synapseWeights(inactiveUnits,inactiveUnits));%*currentState(inactiveUnits);
-        end
-        
-        % Returns the distribution of active and inactive neurons for all
-        % patterns in stored in the network
-        function [activeDistribution, inactiveDistribution,binValues] = GetActivityDistribution(obj,nBins)
-            if nargin == 1
-                nBins = 100;
-            end
-            
+                
+        function [counts, bins, potentialValues, activityValues] = GetPotentialDistribution(obj, nBins)
             nPatterns = size(obj.storedPatterns,1);
-            activeUnitPotentials = [];
-            inactiveUnitPotentials = [];
+                       
+            potentialValues = zeros(1,size(obj.synapseWeights,1)*nPatterns);
+            activityValues = zeros(1,size(obj.synapseWeights,1)*nPatterns);
+            
             for patternIndex = 1:nPatterns
-                [aup, iup] = obj.GetActivityPotentials(obj.storedPatterns(patternIndex,:));
-                activeUnitPotentials = [activeUnitPotentials aup];
-                inactiveUnitPotentials = [inactiveUnitPotentials iup];
+                nextPattern = obj.storedPatterns(patternIndex,:);
+                inputPotential = obj.synapseWeights*nextPattern';                
+                potentialValues( (1:size(obj.synapseWeights,1))+((patternIndex-1) * size(obj.synapseWeights,1))) = inputPotential;
+                activityValues((1:size(obj.synapseWeights,1))+((patternIndex-1) * size(obj.synapseWeights,1))) = nextPattern;
             end
             
-            maxBin = max([activeUnitPotentials(:); inactiveUnitPotentials(:)]);
-            minBin = min([activeUnitPotentials(:); inactiveUnitPotentials(:)]);
-            binValues = linspace(minBin,maxBin,nBins);
-            
-            activeDistribution = hist(activeUnitPotentials(:),binValues);
-            inactiveDistribution = hist(inactiveUnitPotentials(:),binValues);
-            
+            minBin = min(potentialValues);
+            maxBin = max(potentialValues);
+            bins = linspace(minBin, maxBin,nBins);
+            counts= zeros(2,length(bins));
+            counts(1,:) = hist(potentialValues(activityValues > 0),bins);
+            counts(2,:) = hist(potentialValues(activityValues <= 0),bins);
         end
     end
     
     
     methods (Static)
-        % Takes a hopfield network and returns a pruned weight matrix
-        function prunedWeightMatrix = PruneWeightMatrix(hopnet,d)
-            prunedWeightMatrix = hopnet.GetWeightMatrix();
+        % Takes a weight matrix and a deletion factor d (0 <= d <= 1)
+        % d determines, for each neuron, the proportion of incoming
+        % synapses that are set to zero
+        function prunedWeightMatrix = PruneWeightMatrix(weightMatrix,d)
+            prunedWeightMatrix = weightMatrix;
 
             for rowIndex = 1:size(prunedWeightMatrix,1)
                 delIndices = randperm(size(prunedWeightMatrix,2));
@@ -306,8 +287,12 @@ classdef Hopfield < handle
             end
         end
         
-        % Takes a hopfield network and tests recollection for all patterns
-        % in the pattern matrix
+        % Takes a trained hopfield network together with a pattern matrix
+        % Each pattern in the matrix is distorted with the specified noise
+        % level. The disorted pattern is presented to the network and if
+        % the network converges to the original pattern, this is considered
+        % a correct response. The proportion of correctly recalled patterns
+        % is returned
         function [pc, it] = TestPatterns(hopnet, patternMatrix, noiseLevel)
             nPatterns = size(patternMatrix,1);
             
@@ -318,7 +303,7 @@ classdef Hopfield < handle
                 pattern = patternMatrix(patternIndex,:);
                 noisePattern = hopnet.DistortPattern(pattern, noiseLevel);
                 
-                [finalState, nIterations] = hopnet.Converge(noisePattern, 'async');
+                [finalState, nIterations] = hopnet.Converge(noisePattern);
                 itVector(patternIndex) = nIterations;
                 
                 if sum(pattern == finalState) == size(patternMatrix,2)
