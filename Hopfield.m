@@ -12,6 +12,7 @@ classdef Hopfield < handle
         clipMode  = 'noclip';
         clipValue = 1;
         updateMode = 'async';
+        activityNormalization = 'off';
         
         networkSize = 0;
         unitThreshold = 0;
@@ -59,6 +60,25 @@ classdef Hopfield < handle
             end
         end
         
+        function patternMatrix = GeneratePatternMatrix(obj, nPatterns, patternActivity)
+            patternMatrix = zeros(nPatterns, obj.networkSize);
+            
+            for patternIndex = 1:nPatterns
+                isValidPattern = 0;
+                while isValidPattern == 0
+                   newPattern = obj.GeneratePattern(patternActivity);
+
+                   isValidPattern = 1;
+                   for i = 1:patternIndex
+                      if sum(newPattern == patternMatrix(i,:)) == obj.networkSize
+                          isValidPattern = 0;
+                          break;
+                      end
+                   end
+                end
+                patternMatrix(patternIndex,:) = newPattern;
+            end
+        end
         % Add the pattern nextPattern to the weight matrix
         % C: normalization constant for  the weights, defaults to 1/N
         function AddPattern(obj, nextPattern, C)
@@ -135,6 +155,17 @@ classdef Hopfield < handle
                 obj.updateMode = 'async';
             end
         end
+        function SetActivityNormalization(obj, activityNormalization)
+            activityNormalization = lower(activityNormalization);
+            validModes = {'on','off'};
+            
+            for i = 1:length(validModes)
+                if strcmpi(normalizationMode,validModes{i})
+                    obj.activityNormalization = activityNormalization;
+                    return;
+                end
+            end
+        end
         function EnableWeightClipping(obj, clipValue)
             obj.clipMode = 'clip';
             obj.clipValue = clipValue;
@@ -158,7 +189,7 @@ classdef Hopfield < handle
             threshold = obj.unitThreshold;
             method = obj.updateMode;
            
-            if (size(initialState,1) == 2)
+            if (size(initialState,2) == 1)
                 initialState = initialState';
             end
             
@@ -167,8 +198,8 @@ classdef Hopfield < handle
                 case 'sync'
                     inputPotential = obj.synapseWeights*initialState';
                     
-                    outputState( (inputPotential-threshold) > threshold) = obj.unitValues(2);
-                    outputState( (inputPotential-threshold) <= threshold) = obj.unitValues(1);
+                    outputState( (inputPotential) > threshold) = obj.unitValues(2);
+                    outputState( (inputPotential) <= threshold) = obj.unitValues(1);
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
                     for unitIdx = 1:length(updateOrder)
@@ -187,27 +218,29 @@ classdef Hopfield < handle
         % longer change between two succesive updates. The final network
         % state is return together with the number of iterations it took to
         % get there
-        function [updatedState,it] = Converge(obj, initialState)
-            if (size(initialState,1) == 2)
+        function [finalState,it] = Converge(obj, initialState)
+            if (size(initialState,2) == 1)
                 initialState = initialState';
             end
             
             it = 0;
-            updatedState = initialState;
-            initialState = zeros(size(updatedState));
-            while sum(initialState ~=  updatedState) > 0
-                initialState = updatedState;
-                updatedState = obj.Iterate(initialState);
-                it = it + 1;
-                
+            finalState = initialState;
+            initialState = 0.*initialState;
+            while sum(initialState ~=  finalState) > 0
                 if it > obj.maxIterations
                     display('Warning: maximum number of iterations exceeded');
                     break
                 end
+                
+                initialState = finalState;
+                finalState = obj.Iterate(initialState);
+                it = it + 1;
             end
         end
         
-        % Returns the energy associated with a specific network state
+        % Returns the energy associated with a specific network state. The
+        % function does not take into account if the given state is stable
+        % or not.
         function energy = GetEnergy(obj, networkState)
             if (size(networkState,2) > 1)
                 networkState = networkState';
@@ -216,41 +249,91 @@ classdef Hopfield < handle
             energy = -sum(sum(obj.synapseWeights.*(networkState*networkState')));
         end
         
+        % Returns the energy associated with each unit in the following
+        % state. The function does not take into account if the given state
+        % is stable or not. Unit energy is defined as the activity of the
+        % unit multiplied by its net input
+        function unitEnergy = GetUnitEnergy(obj,networkState)
+            if size(networkState,1) == 1
+                networkState = networkState';
+            end
+            
+            netInput = obj.synapseWeights*networkState;
+            unitEnergy = netInput.*networkState;
+        end
+        
+        % Generates a random pattern and lets the network converge to a
+        % stable state. All weights are then adapted using an unlearning
+        % rule
+        function Unlearn(obj, epsilon, patternActivity)
+            if nargin == 2
+                patternActivity = 0.5;
+            end
+            
+            randomPattern = obj.GeneratePattern(patternActivity);
+            finalState = obj.Converge(randomPattern);
+            
+            if size(finalState,1) == 1
+                finalState = finalState';
+            end
+            
+            deltaW = -epsilon.*(finalState*finalState');
+            obj.synapseWeights = obj.synapseWeights + deltaW;
+            for i = 1:size(obj.synapseWeights,1)
+                obj.synapseWeights(i,i) = 0;
+            end
+        end
+        
         % Probe the network for the existance of spurious states. For this,
         % a number of random patterns are generated with specified
         % probability of activation. The network is presented with each of
         % these patterns and allowed to settle into a stable state. The
         % number of different states together with their final values is
         % recorded
-        function [stableStates, stateHist] = GetSpuriousStates(obj,nRandomPatterns,patternActivity)
+        function [stablePatternMatrix, stablePatternCount, meanPatternIterations] = SampleWithRandomStates(obj,nRandomPatterns,patternActivity)
             if nargin == 2
                 patternActivity = 0.5;
             end
             
-            stableStates = zeros(nRandomPatterns,size(obj.synapseWeights,1));
-            stateHist = zeros(1,nRandomPatterns);
-            nDistinctStates = 0;
+            nStableStates = 0;
+            stablePatternMatrix = [];
+            stablePatternCount  = [];
+            meanPatternIterations = [];
             
-            for idx = 1:nRandomPatterns
-                randomPattern = obj.GeneratePattern(patternActivity);
-                output = obj.Converge(randomPattern);
+            for i = 1:nRandomPatterns
+                testPattern = obj.GeneratePattern(patternActivity);
+                [finalState,it] = obj.Converge(testPattern);
                 
-                patternIdx = find(ismember(stableStates,output,'rows') == 1);
-                if (isempty(patternIdx))
-                    patternIdx = find(ismember(stableStates,-1.*output,'rows') == 1);
-                    if (isempty(patternIdx))
-                        nDistinctStates = nDistinctStates + 1;
-                        patternIdx = nDistinctStates;
+                isNewState = 1;
+                for j = 1:nStableStates
+                    if (sum(stablePatternMatrix(j,:) == finalState) == obj.networkSize) || ...
+                        (sum(stablePatternMatrix(j,:) == -finalState) == obj.networkSize)
+                        
+                        stablePatternCount(j) = stablePatternCount(j) + 1;
+                        meanPatternIterations(j) = meanPatternIterations(j) + it;
+                        isNewState = 0;
+                        break;
                     end
+%                     if sum(stablePatternMatrix(j,:) == -finalState) == obj.networkSize
+%                         stablePatternCount(j) = stablePatternCount(j) + 1;
+%                         isNewState = 0;
+%                         break;
+%                     end
                 end
-
-                stateHist(patternIdx) = stateHist(patternIdx) + 1;
-                stableStates(patternIdx,:) = output;
+            
+                if isNewState == 1
+                    stablePatternMatrix = [stablePatternMatrix; finalState];
+                    stablePatternCount = [stablePatternCount 1];
+                    meanPatternIterations= [meanPatternIterations it];
+                    nStableStates = nStableStates + 1;
+                end
             end
-            stateHist = stateHist(1:nDistinctStates);
-            stableStates = stableStates(1:nDistinctStates,:);
+            meanPatternIterations = meanPatternIterations./stablePatternCount;
         end
-                
+        
+        % Takes each pattern in the stored pattern matrix in constructs the
+        % distribution of inputs for each active and inactive unit in each
+        % pattern.
         function [counts, bins, potentialValues, activityValues] = GetPotentialDistribution(obj, nBins)
             nPatterns = size(obj.storedPatterns,1);
                        
@@ -298,6 +381,9 @@ classdef Hopfield < handle
         % a correct response. The proportion of correctly recalled patterns
         % is returned
         function [pc, it] = TestPatterns(hopnet, patternMatrix, noiseLevel)
+            if nargin == 2
+                noiseLevel = 0;
+            end
             nPatterns = size(patternMatrix,1);
             
             pcVector = zeros(1,nPatterns);
@@ -318,6 +404,33 @@ classdef Hopfield < handle
             pc = mean(pcVector);
             it = mean(itVector);
         end
+        
+        % This function can be used to test if rows in stablePatternMatrix
+        % are present in patternMatrix. The function tests for original and
+        % inverse patterns. You will normally use this function after
+        % sampling a network with random states to see which of the
+        % converged states correspond to stored memories versus spurious
+        % states
+        function isSpuriousState = TestSpuriousStates(stablePatternMatrix,patternMatrix)
+            nStableStates = size(stablePatternMatrix,1);
+            nPatterns = size(patternMatrix,1);
+            networkSize = size(patternMatrix,2);
+            
+            isSpuriousState = ones(1,nStableStates);
+            for j = 1:nStableStates
+                for i = 1:nPatterns
+                    if sum(stablePatternMatrix(j,:) == patternMatrix(i,:)) == networkSize
+                        isSpuriousState(j) = 0;
+                        break;
+                    end
+                    if sum(stablePatternMatrix(j,:) == -patternMatrix(i,:)) == networkSize
+                        isSpuriousState(j) = 0;
+                        break;
+                    end
+                end
+            end
+        end
+        
     end
 end
 
