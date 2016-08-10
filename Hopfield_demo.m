@@ -52,7 +52,7 @@ for trainingPatternIdx = 1:nPatterns
            converged = -1;
            iterations = 1;
            while converged == -1
-               netOutput = hopfield.Iterate(netInput, 'async');
+               netOutput = hopfield.Iterate(netInput);
 
                if (sum(netInput-netOutput) == 0)
                    converged = 1;
