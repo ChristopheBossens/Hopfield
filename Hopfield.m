@@ -271,13 +271,13 @@ classdef Hopfield < handle
             end
             
             randomPattern = obj.GeneratePattern(patternActivity);
-            finalState = obj.Converge(randomPattern);
+            stableState = obj.Converge(randomPattern);
             
-            if size(finalState,1) == 1
-                finalState = finalState';
+            if size(stableState,1) == 1
+                stableState = stableState';
             end
             
-            deltaW = -epsilon.*(finalState*finalState');
+            deltaW = -epsilon.*(stableState*stableState');
             obj.synapseWeights = obj.synapseWeights + deltaW;
             for i = 1:size(obj.synapseWeights,1)
                 obj.synapseWeights(i,i) = 0;
@@ -314,11 +314,6 @@ classdef Hopfield < handle
                         isNewState = 0;
                         break;
                     end
-%                     if sum(stablePatternMatrix(j,:) == -finalState) == obj.networkSize
-%                         stablePatternCount(j) = stablePatternCount(j) + 1;
-%                         isNewState = 0;
-%                         break;
-%                     end
                 end
             
                 if isNewState == 1
@@ -378,9 +373,9 @@ classdef Hopfield < handle
         % Each pattern in the matrix is distorted with the specified noise
         % level. The disorted pattern is presented to the network and if
         % the network converges to the original pattern, this is considered
-        % a correct response. The proportion of correctly recalled patterns
-        % is returned
-        function [pc, it] = TestPatterns(hopnet, patternMatrix, noiseLevel)
+        % a correct response. For each sample, a vector contains 1 and 0
+        % for each pattern that is succesfully recalled or not.
+        function [pcVector, itVector] = TestPatterns(hopnet, patternMatrix, noiseLevel)
             if nargin == 2
                 noiseLevel = 0;
             end
@@ -400,9 +395,6 @@ classdef Hopfield < handle
                     pcVector(patternIndex) = 1;
                 end
             end
-            
-            pc = mean(pcVector);
-            it = mean(itVector);
         end
         
         % This function can be used to test if rows in stablePatternMatrix
@@ -411,20 +403,18 @@ classdef Hopfield < handle
         % sampling a network with random states to see which of the
         % converged states correspond to stored memories versus spurious
         % states
-        function isSpuriousState = TestSpuriousStates(stablePatternMatrix,patternMatrix)
+        function [isSpuriousState, oldPatternIndex] = AnalyseStableStates(stablePatternMatrix,patternMatrix)
             nStableStates = size(stablePatternMatrix,1);
             nPatterns = size(patternMatrix,1);
             networkSize = size(patternMatrix,2);
-            
+            oldPatternIndex = -1.*ones(1,nStableStates);
             isSpuriousState = ones(1,nStableStates);
             for j = 1:nStableStates
                 for i = 1:nPatterns
-                    if sum(stablePatternMatrix(j,:) == patternMatrix(i,:)) == networkSize
+                    if (sum(stablePatternMatrix(j,:) == patternMatrix(i,:)) == networkSize) || ...
+                            (sum(stablePatternMatrix(j,:) == -patternMatrix(i,:)) == networkSize)
                         isSpuriousState(j) = 0;
-                        break;
-                    end
-                    if sum(stablePatternMatrix(j,:) == -patternMatrix(i,:)) == networkSize
-                        isSpuriousState(j) = 0;
+                        oldPatternIndex(j) = i;
                         break;
                     end
                 end
