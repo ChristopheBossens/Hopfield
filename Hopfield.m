@@ -14,6 +14,7 @@ classdef Hopfield < handle
         updateMode = 'async';
         activityNormalization = 'off';
         
+        gamma = 1.0;
         networkSize = 0;
         unitThreshold = 0;
         unitValues = [-1 1];
@@ -96,7 +97,7 @@ classdef Hopfield < handle
                 nextPattern = nextPattern';
             end
             
-            obj.synapseWeights = obj.synapseWeights + C.*(nextPattern*nextPattern');
+            obj.synapseWeights = obj.gamma.*obj.synapseWeights + C.*(nextPattern*nextPattern');
             
             % Check if clipping needs to be applied
             if strcmp(obj.clipMode,'clip')
@@ -141,6 +142,9 @@ classdef Hopfield < handle
                 obj.unitModel = 'V';
                 obj.unitValues = [0 1];
             end
+        end
+        function SetGamma(obj,g)
+            obj.gamma = g;
         end
         function SetThreshold(obj,T)
             obj.unitThreshold = T;
