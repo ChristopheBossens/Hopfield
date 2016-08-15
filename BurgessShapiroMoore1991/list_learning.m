@@ -2,9 +2,9 @@ clear
 % Define simulation parameters and configure hopfield network
 networkSize = 100;
 nPatterns = 40;
-gamma = 1.05;
-epsilon = 0.1;
-noiseLevel = 0.2;
+gamma = 1.0;
+epsilon = 0.2;
+noiseLevel = 0.15;
 nSimulations = 10;
 
 hopfield = Hopfield(networkSize);
@@ -72,3 +72,83 @@ legend('10 patterns','20 patterns','30 patterns')
 xlabel('N° trained patterns')
 ylabel('Pattern overlap')
 title(['Serial position curve (\gamma = ' num2str(gamma) ', \epsilon = ' num2str(epsilon)])
+
+%% Simulation code for figure 7
+networkSize = 700;
+epsilon = 0.2;
+noiseLevel = 0.15;
+nSimulations = 10;
+
+rpiHopfield = Hopfield(networkSize);
+rpiHopfield.EnableWeightClipping(1);
+controlHopfield = Hopfield(networkSize);
+controlHopfield.EnableWeightClipping(1);
+
+nCategories = 4;
+nTrials = 24;
+nMembersPerTrial = 3;
+
+rpiOverlapData = zeros(nSimulations,nTrials);
+controlOverlapData = zeros(nSimulations,nTrials);
+
+for simulationIndex = 1:nSimulations
+    % Generate the category patterns for the rpi experiment
+    prototypePatterns = zeros(nCategories,networkSize);
+    for i = 1:nCategories
+        prototypePatterns(i,:) = rpiHopfield.GeneratePattern();
+    end
+    
+    % Generate prototype patterns for the control experiment
+    controlPrototypePatterns = zeros(nTrials,networkSize);
+    for i = 1:nTrials
+        controlPrototypePatterns(i,:) = controlHopfield.GeneratePattern();
+    end
+    
+    % Generate the exemplar patterns from the prototype patterns
+    rpiPrototypeIndex = 1;
+    controlPrototypeIndex = 1;
+    nPatterns = nTrials*nMembersPerTrial;
+    rpiPatternMatrix = zeros(nPatterns,networkSize);
+    controlPatternMatrix = zeros(nPatterns,networkSize);
+    for i = 1:nPatterns
+        rpiPatternMatrix(i,:) = rpiHopfield.DistortPattern(prototypePatterns(rpiPrototypeIndex,:),194/networkSize);
+        controlPatternMatrix(i,:) = controlHopfield.DistortPattern(controlPrototypePatterns(controlPrototypeIndex,:),194/networkSize);
+        
+        if mod(i,(nTrials/nCategories)*nMembersPerTrial)==0
+            rpiPrototypeIndex = rpiPrototypeIndex + 1;
+        end
+        
+        if mod(i,nMembersPerTrial) == 0
+            controlPrototypeIndex = controlPrototypeIndex + 1;
+        end
+    end
+
+    rpiHopfield.ResetWeights();
+    controlHopfield.ResetWeights();
+    for i = 1:nPatterns
+        % Add patterns
+        rpiHopfield.AddPattern(rpiPatternMatrix(i,:),epsilon);
+        controlHopfield.AddPattern(controlPatternMatrix(i,:),epsilon);
+        
+        % Test the network every 3 patterns (i.e. a single trial)
+        if mod(i,nMembersPerTrial) == 0
+            for j = (i-(nMembersPerTrial-1)):i
+                originalPattern = rpiPatternMatrix(j,:);
+                distortedPattern = rpiHopfield.DistortPattern(originalPattern,noiseLevel);
+                finalState = rpiHopfield.Converge(distortedPattern);
+                rpiOverlapData(simulationIndex,ceil(i/nMembersPerTrial)) = rpiOverlapData(simulationIndex,ceil(i/nMembersPerTrial)) + (originalPattern*finalState')/networkSize;
+                
+                originalPattern = controlPatternMatrix(j,:);
+                distortedPattern = controlHopfield.DistortPattern(originalPattern, noiseLevel);
+                finalState = controlHopfield.Converge(distortedPattern);
+                controlOverlapData(simulationIndex,ceil(i/nMembersPerTrial)) = controlOverlapData(simulationIndex,ceil(i/nMembersPerTrial)) + (originalPattern*finalState')/networkSize;
+            end
+        end
+    end
+    rpiOverlapData(simulationIndex,:) = rpiOverlapData(simulationIndex,:)./nMembersPerTrial;
+    controlOverlapData(simulationIndex,:) = controlOverlapData(simulationIndex,:)./nMembersPerTrial;
+end
+%%
+clf,hold on
+plot(mean(rpiOverlapData),'-k','LineWidth',2)
+plot(mean(controlOverlapData),'-.k','LineWidth',2)
