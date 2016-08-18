@@ -13,6 +13,8 @@ classdef Hopfield < handle
         clipValue = 1;
         updateMode = 'async';
         activityNormalization = 'off';
+        updateDynamics = 'deterministic';
+        beta = 1.0;
         
         gamma = 1.0;
         networkSize = 0;
@@ -150,9 +152,9 @@ classdef Hopfield < handle
             obj.unitThreshold = T;
         end
         function SetUpdateMode(obj,updateMode)
-            if updateMode == 'async'
+            if strcmp(updateMode,'async')==1
                 obj.updateMode ='async';
-            elseif updateMode == 'sync';
+            elseif strcmp(updateMode,'sync')==1
                 obj.updateMode = 'sync';
             else
                 display('Invalid update mode. Using default mode (''async'')');
@@ -183,12 +185,16 @@ classdef Hopfield < handle
         function DisableSelfConnections(obj)
             obj.selfConnections = 'noself';
         end
-        
-        % Performs a single update iteration. 
-        % For synchronous updating, all units are updated in a single
-        % operation
-        % For asynchronous updating, all units are updated in a random
-        % order
+        function UseDeterministicDynamics(obj)
+            obj.updateDynamics = 'deterministic';
+        end
+        function UseStochasticDynamics(obj,beta)
+            obj.updateDynamics = 'stochastic';
+            obj.beta = beta;
+        end
+        % Here we perform the state update of the hopfield network. Updates
+        % are performed synchronously (i.e. all units at the same time), or
+        % asynchronously (each unit in turn, but in random order)
         function outputState = Iterate(obj, initialState)
             threshold = obj.unitThreshold;
             method = obj.updateMode;
@@ -202,17 +208,34 @@ classdef Hopfield < handle
                 case 'sync'
                     inputPotential = obj.synapseWeights*initialState';
                     
-                    outputState( (inputPotential) > threshold) = obj.unitValues(2);
-                    outputState( (inputPotential) <= threshold) = obj.unitValues(1);
+                    if strcmp(obj.updateDynamics,'deterministic') == 1
+                        outputState( (inputPotential) > threshold) = obj.unitValues(2);
+                        outputState( (inputPotential) <= threshold) = obj.unitValues(1);
+                    else
+                        g = 0.5.*(1+tanh(obj.beta.*(inputPotential-threshold)));
+                        r = rand(size(g));
+                        outputState(g > r) = obj.unitValues(2);
+                        outputState(g <= r) = obj.unitValues(1);
+                    end
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
                     for unitIdx = 1:length(updateOrder)
                         inputPotential = obj.synapseWeights(updateOrder(unitIdx),:)*outputState';
-                           
-                        if ( (inputPotential) > threshold)
-                            outputState(updateOrder(unitIdx)) = obj.unitValues(2);
+                        
+                        if strcmp(obj.updateDynamics,'deterministic') == 1
+                            if ( (inputPotential) > threshold)
+                                outputState(updateOrder(unitIdx)) = obj.unitValues(2);
+                            else
+                                outputState(updateOrder(unitIdx)) = obj.unitValues(1);
+                            end
                         else
-                            outputState(updateOrder(unitIdx)) = obj.unitValues(1);
+                            g = 0.5*(1+tanh(obj.beta*(inputPotential + threshold)));
+                            r = rand();
+                            if (g > r)
+                                outputState(updateOrder(unitIdx)) = obj.unitValues(2);
+                            else
+                                outputState(updateOrder(unitIdx)) = obj.unitValues(1);
+                            end
                         end
                     end
             end
@@ -352,6 +375,36 @@ classdef Hopfield < handle
             counts= zeros(2,length(bins));
             counts(1,:) = hist(potentialValues(activityValues > 0),bins);
             counts(2,:) = hist(potentialValues(activityValues <= 0),bins);
+        end
+        
+        % Adds each pattern to the network succesively and tests recall on
+        % all previously learned patterns.
+        function [overlapVector, pcVector, itVector] = ProbeCapacity(obj,patternMatrix,noiseLevel,C)
+            nPatterns = size(patternMatrix,1);
+            overlapVector = zeros(1,nPatterns);
+            pcVector = zeros(1,nPatterns);
+            itVector = zeros(1,nPatterns);
+            
+            obj.ResetWeights();
+            for patternIndex = 1:nPatterns
+                obj.AddPattern(patternMatrix(patternIndex,:),C);
+                
+                for testIndex = 1:patternIndex
+                    originalPattern = patternMatrix(patternIndex,:);
+                    noisePattern = obj.DistortPattern(originalPattern, noiseLevel);
+                    [finalState, nIterations] = obj.Converge(noisePattern);
+                    
+                    itVector(patternIndex) = itVector(patternIndex) + nIterations;
+                    if sum(originalPattern == finalState) == size(patternMatrix,2)
+                        pcVector(patternIndex) = pcVector(patternIndex) + 1;
+                    end
+                    overlapVector(patternIndex) = overlapVector(patternIndex) + (originalPattern*finalState')/obj.networkSize;
+                end
+                
+                overlapVector(patternIndex) = overlapVector(patternIndex)./patternIndex;
+                itVector(patternIndex) = itVector(patternIndex)./patternIndex;
+                pcVector(patternIndex) = pcVector(patternIndex)./patternIndex;
+            end
         end
     end
     
