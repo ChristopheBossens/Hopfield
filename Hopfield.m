@@ -45,25 +45,10 @@ classdef Hopfield < handle
                 pattern = (pattern + 1)./2;
             end
         end
-        
-        % Takes the input and flips the state of a randum number of units
-        % inputPattern: the pattern to be changed
-        % noiseLevel: proportion of units that will be flipped
-        function outputPattern = DistortPattern(obj, inputPattern, noiseLevel)
-            flipIndices = randperm(length(inputPattern));
-            flipIndices = flipIndices(1:round(noiseLevel*length(inputPattern)));
-            
-            outputPattern = inputPattern;
-            if (obj.unitModel == 'S')
-                outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
-            elseif (obj.unitModel == 'V')
-                outputPattern = (2.*outputPattern)-1;
-                outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
-                outputPattern = (outputPattern+1)./2;
-            end
-        end
-        
         function patternMatrix = GeneratePatternMatrix(obj, nPatterns, patternActivity)
+            if nargin == 1
+                patternActivity = 0.5;
+            end
             patternMatrix = zeros(nPatterns, obj.networkSize);
             
             for patternIndex = 1:nPatterns
@@ -82,6 +67,24 @@ classdef Hopfield < handle
                 patternMatrix(patternIndex,:) = newPattern;
             end
         end
+        
+        % Takes the input and flips the state of a randum number of units
+        % inputPattern: the pattern to be changed
+        % noiseLevel: proportion of units that will be flipped
+        function outputPattern = DistortPattern(obj, inputPattern, noiseLevel)
+            flipIndices = randperm(length(inputPattern));
+            flipIndices = flipIndices(1:round(noiseLevel*length(inputPattern)));
+            
+            outputPattern = inputPattern;
+            if (obj.unitModel == 'S')
+                outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
+            elseif (obj.unitModel == 'V')
+                outputPattern = (2.*outputPattern)-1;
+                outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
+                outputPattern = (outputPattern+1)./2;
+            end
+        end
+        
         % Add the pattern nextPattern to the weight matrix
         % C: normalization constant for  the weights, defaults to 1/N
         function AddPattern(obj, nextPattern, C)
@@ -122,9 +125,18 @@ classdef Hopfield < handle
             nextPattern(nextPattern < M) = obj.unitValues(1);
             obj.storedPatterns = [obj.storedPatterns; nextPattern'];
         end
-
+        function AddPatternMatrix(obj,patternMatrix,C)
+            if nargin == 2
+                C = size(patternMatrix,2);
+            end
+            
+            for i = 1:size(patternMatrix,1)
+                obj.AddPattern(patternMatrix(i,:),C);
+            end
+        end
+        
         % Fetch and manipulate the weight matrix manually
-        function ResetWeights(obj)
+        function ResetWeightMatrix(obj)
             obj.storedPatterns = [];
             obj.synapseWeights = zeros(obj.networkSize);
         end   
@@ -192,6 +204,7 @@ classdef Hopfield < handle
             obj.updateDynamics = 'stochastic';
             obj.beta = beta;
         end
+        
         % Here we perform the state update of the hopfield network. Updates
         % are performed synchronously (i.e. all units at the same time), or
         % asynchronously (each unit in turn, but in random order)
@@ -377,8 +390,9 @@ classdef Hopfield < handle
             counts(2,:) = hist(potentialValues(activityValues <= 0),bins);
         end
         
-        % Adds each pattern to the network succesively and tests recall on
-        % all previously learned patterns.
+        % Adds each pattern in pattern matrix to the network. 
+        % After each new pattern is added, recall is tested for all
+        % previous patterns learned up to that pattern.
         function [overlapVector, pcVector, itVector] = ProbeCapacity(obj,patternMatrix,noiseLevel,C)
             nPatterns = size(patternMatrix,1);
             overlapVector = zeros(1,nPatterns);
@@ -411,18 +425,46 @@ classdef Hopfield < handle
     
     methods (Static)
         % Takes a weight matrix and a deletion factor d (0 <= d <= 1)
-        % d determines, for each neuron, the proportion of incoming
-        % synapses that are set to zero
-        function prunedWeightMatrix = PruneWeightMatrix(weightMatrix,d)
+        % Depending on the specified method, the following happens:
+        % - 'incoming': for each neuron a proportion of the incoming
+        % connections are deleted
+        % - 'random': A random proportion of synapses is removed
+        % - 'neuron': A random proportion of neurons is removed
+        function prunedWeightMatrix = PruneWeightMatrix(weightMatrix,d, method)
+            if nargin == 2
+                method = 'incoming';
+            end
+            
+            
             prunedWeightMatrix = weightMatrix;
-
-            for rowIndex = 1:size(prunedWeightMatrix,1)
-                delIndices = randperm(size(prunedWeightMatrix,2));
-                delLimit = round(d*size(prunedWeightMatrix,2));
-                if delLimit > 0
-                    delIndices = delIndices(1:delLimit);
-                    prunedWeightMatrix(rowIndex,delIndices) = 0;
-                end
+            
+            switch method
+                case 'incoming'
+                    for rowIndex = 1:size(prunedWeightMatrix,1)
+                        delIndices = setdiff(randperm(size(prunedWeightMatrix,2)),rowIndex);
+                        delIndices = delIndices(randperm(length(delIndices)));
+                        
+                        delLimit = round(d*size(prunedWeightMatrix,2));
+                        if delLimit > 0
+                            delIndices = delIndices(1:delLimit);
+                            prunedWeightMatrix(rowIndex,delIndices) = 0;
+                        end
+                    end
+                    
+                case 'random'
+                    delIndices = randperm(length(prunedWeightMatrix(:)));
+                    selfIndices = 1:(size(prunedWeightMatrix,1)+1):length(prunedWeightMatrix(:));
+                    delIndices = setdiff(delIndices,selfIndices);
+                    delIndices = delIndices(randperm(length(delIndices)));
+                    
+                    delLimit = round(d*length(prunedWeightMatrix(:)));
+                    prunedWeightMatrix(delIndices(1:delLimit)) = 0;
+                
+                case 'neuron'
+                    delNeurons = randperm(size(prunedWeightMatrix,1));
+                    delLimit = round(d*size(prunedWeightMatrix,1));
+                    
+                    prunedWeightMatrix(:,delNeurons(1:delLimit)) = 0;
             end
         end
         
