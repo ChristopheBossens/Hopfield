@@ -152,9 +152,9 @@ classdef Hopfield < handle
             obj.unitThreshold = T;
         end
         function SetUpdateMode(obj,updateMode)
-            if updateMode == 'async'
+            if strcmp(updateMode,'async')==1
                 obj.updateMode ='async';
-            elseif updateMode == 'sync';
+            elseif strcmp(updateMode,'sync')==1
                 obj.updateMode = 'sync';
             else
                 display('Invalid update mode. Using default mode (''async'')');
@@ -214,8 +214,8 @@ classdef Hopfield < handle
                     else
                         g = 0.5.*(1+tanh(obj.beta.*(inputPotential-threshold)));
                         r = rand(size(g));
-                        outputState(g < r) = obj.unitValues(2);
-                        outputState(g >= r) = obj.unitValues(1);
+                        outputState(g > r) = obj.unitValues(2);
+                        outputState(g <= r) = obj.unitValues(1);
                     end
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
@@ -379,7 +379,7 @@ classdef Hopfield < handle
         
         % Adds each pattern to the network succesively and tests recall on
         % all previously learned patterns.
-        function [overlapVector, pcVector, itVector] = ProbeCapacity(obj,patternMatrix,noiseLevel)
+        function [overlapVector, pcVector, itVector] = ProbeCapacity(obj,patternMatrix,noiseLevel,C)
             nPatterns = size(patternMatrix,1);
             overlapVector = zeros(1,nPatterns);
             pcVector = zeros(1,nPatterns);
@@ -387,7 +387,7 @@ classdef Hopfield < handle
             
             obj.ResetWeights();
             for patternIndex = 1:nPatterns
-                obj.AddPattern(patternMatrix(patternIndex,:));
+                obj.AddPattern(patternMatrix(patternIndex,:),C);
                 
                 for testIndex = 1:patternIndex
                     originalPattern = patternMatrix(patternIndex,:);
