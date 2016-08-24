@@ -6,6 +6,7 @@ classdef Hopfield < handle
         backupWeights  = [];
         synapseWeights = [];
         storedPatterns = [];
+        currentState   = [];
         
         unitModel = 'S';
         selfConnections= 'noself';
@@ -27,8 +28,10 @@ classdef Hopfield < handle
     methods
         % Initializes a Hopfield network of a given size
         function obj = Hopfield(networkSize)
-            obj.networkSize = networkSize;
+            obj.networkSize    = networkSize;
             obj.synapseWeights = zeros(obj.networkSize);
+            obj.unitThreshold  = zeros(1,obj.networkSize);
+            obj.currentState   = zeros(1,obj.networkSize);
         end
         
         % Generates a new pattern
@@ -161,7 +164,13 @@ classdef Hopfield < handle
             obj.gamma = g;
         end
         function SetThreshold(obj,T)
-            obj.unitThreshold = T;
+            if length(T) == 1
+                obj.unitThreshold = T.*ones(1,obj.networkSize);
+            elseif length(T) == obj.networkSize
+                obj.unitThreshold = T;
+            else
+                error('Length of T needs to be equal to one or to the number of units in the network');
+            end
         end
         function SetUpdateMode(obj,updateMode)
             if strcmp(updateMode,'async')==1
@@ -205,53 +214,71 @@ classdef Hopfield < handle
             obj.beta = beta;
         end
         
+        % Clamp the state of the model to a specific set of values
+        function ClampState(obj,newState)
+            if length(newState) ~= obj.networkSize
+                error('Number of units does not correspond')
+            end
+            if size(newState,2) == 1
+                newState = newState';
+            end
+            obj.currentState = newState;
+        end
         % Here we perform the state update of the hopfield network. Updates
         % are performed synchronously (i.e. all units at the same time), or
         % asynchronously (each unit in turn, but in random order)
-        function outputState = Iterate(obj, initialState)
+        function output = Iterate(obj, initialState)
             threshold = obj.unitThreshold;
-            method = obj.updateMode;
-           
-            if (size(initialState,2) == 1)
-                initialState = initialState';
-            end
+            method = obj.updateMode;      
+            obj.ClampState(initialState);
             
-            outputState = initialState;
             switch method
                 case 'sync'
-                    inputPotential = obj.synapseWeights*initialState';
+                    inputPotential = obj.synapseWeights*obj.currentState';
                     
                     if strcmp(obj.updateDynamics,'deterministic') == 1
-                        outputState( (inputPotential) > threshold) = obj.unitValues(2);
-                        outputState( (inputPotential) <= threshold) = obj.unitValues(1);
+                        obj.currentState( (inputPotential) > threshold) = obj.unitValues(2);
+                        obj.currentState( (inputPotential) <= threshold) = obj.unitValues(1);
                     else
                         g = 0.5.*(1+tanh(obj.beta.*(inputPotential-threshold)));
                         r = rand(size(g));
-                        outputState(g > r) = obj.unitValues(2);
-                        outputState(g <= r) = obj.unitValues(1);
+                        obj.currentState(g > r) = obj.unitValues(2);
+                        obj.currentState(g <= r) = obj.unitValues(1);
                     end
                 case 'async'
                     updateOrder = randperm(size(obj.synapseWeights,1));
                     for unitIdx = 1:length(updateOrder)
-                        inputPotential = obj.synapseWeights(updateOrder(unitIdx),:)*outputState';
-                        
-                        if strcmp(obj.updateDynamics,'deterministic') == 1
-                            if ( (inputPotential) > threshold)
-                                outputState(updateOrder(unitIdx)) = obj.unitValues(2);
-                            else
-                                outputState(updateOrder(unitIdx)) = obj.unitValues(1);
-                            end
-                        else
-                            g = 0.5*(1+tanh(obj.beta*(inputPotential + threshold)));
-                            r = rand();
-                            if (g > r)
-                                outputState(updateOrder(unitIdx)) = obj.unitValues(2);
-                            else
-                                outputState(updateOrder(unitIdx)) = obj.unitValues(1);
-                            end
-                        end
+                        obj.UpdateUnit(updateOrder(unitIdx));
                     end
             end
+            
+            output = obj.currentState;
+        end
+        
+        % Updates the state of a single unit, given the current network
+        % state
+        function output = UpdateUnit(obj, unitIndex)
+            if length(unitIndex(:)) ~= 1
+                error('Only provide a single unit index')
+            end
+            
+            inputPotential = obj.synapseWeights(unitIndex,:)*obj.currentState';
+            if strcmp(obj.updateDynamics,'deterministic') == 1
+                if ( (inputPotential) > obj.unitThreshold(unitIndex))
+                    obj.currentState(unitIndex) = obj.unitValues(2);
+                else
+                    obj.currentState(unitIndex) = obj.unitValues(1);
+                end
+            else
+                g = 0.5*(1+tanh(obj.beta*(inputPotential - obj.unitThreshold(unitIndex))));
+                r = rand();
+                if (g > r)
+                    obj.currentState(unitIndex) = obj.unitValues(2);
+                else
+                    obj.currentState(unitIndex) = obj.unitValues(1);
+                end
+            end
+            output = obj.currentState;
         end
         
         % Performs multiple iteration steps until the network units no
