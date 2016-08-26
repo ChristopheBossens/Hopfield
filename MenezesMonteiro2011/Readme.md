@@ -3,7 +3,6 @@
 ## Paper summary
 It is has been suggested that the brain possesses compensation mechanisms to counteract the effects of synaptic or neuronal loss. In this paper, possible compensation strategies are investigate in a Hopfield network. An initial set of patterns is learned, followed by deletion of one or several neurons of the network. Synaptic compensation is modeled as the redistribution of the sum of absolute values of removed weights over the remaining synapses. A procedure in which inhibitory and excitatory weights are separately strengthened is demonstrated to yield the best result. The performance of the strategy is validated by comparing the attractor states of all possible initial states in the compensated network with the attractor states of a reduced network in which a number of neurons are removed from the beginning.
 
-
 ## Simulation results
 
 ## Comments

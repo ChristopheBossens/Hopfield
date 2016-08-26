@@ -1,104 +1,98 @@
-clear;
-N = 16;
-P = 2;
+%% Mimic strategy proposed by Horn et al. where we deleted different levels
+% of synapses
+clear 
+networkSize = 800;
+alpha = 0.05;
+sparseness = 0.1;
+T = sparseness*(1-sparseness)*(1-2*sparseness)/2;
 
-h = Hopfield(N);
-hDel = Hopfield(N-1);
+nPatterns = round(alpha*networkSize);
+h = Hopfield(networkSize);
+h.SetThreshold(T);
+h.SetUnitModel('V');
 
-kValues = 0:0.1:1;
-dValues = 0:0.1:0.5;
+patternMatrix = h.GeneratePatternMatrix(nPatterns,sparseness);
+h.AddPatternMatrix(patternMatrix-sparseness,1/networkSize);
 
-nK = length(kValues);
-nD = length(dValues);
-nStrategies = 5;
-
-overlapData =zeros(nK, nD, nStrategies);
-
-% Generate all possible starting states
-if N == 16
-    startingStates=zeros(2^N,N);
-    for i = 1:16
-        startingStates(:,i) = repmat([zeros(2^(16-i),1); ones(2^(16-i),1)],2^(i-1),1);
+recallData = zeros(1,nPatterns);
+for i = 1:nPatterns
+    originalPattern = patternMatrix(i,:);
+    distortedPattern  = h.DistortPattern(originalPattern,0.1);
+    finalPattern = h.Converge(distortedPattern);
+    
+    if sum(finalPattern == originalPattern) == networkSize
+        recallData(i) = 1;
     end
 end
 
-% Initialize the networks
-p = h.GeneratePatternMatrix(P);
-h.ResetWeightMatrix();
-h.AddPatternMatrix(p,1/N);
+dValues = [0:0.01:.50];
+nD = length(dValues);
+recallData = zeros(8,nD);
 or = h.GetWeightMatrix();
 
-hDel.ResetWeightMatrix();
-hDel.AddPatternMatrix(p(:,2:end));
-finalStates2 = zeros(2^N,N-1);
-for i = 1:size(startingStates,1)
-    finalStates2(i,:) = hDel.Converge(startingStates(i,2:end));
-end
+for i = 1:nD
+    display(['Testing deletion: ' num2str(i) '/' num2str(nD)]);
+    [pr, deletedWeights, remainingIndices] = h.PruneWeightMatrix(or,dValues(i));
+    
+    for compensationStrategy = 1:8
+        % Select a specific compensation strategy
+        switch compensationStrategy
+            case 1
+                weightMatrix = or;
+            case 2
+                weightMatrix = pr;
+            case 3
+                c = 1 + dValues(i)/(1-dValues(i));
+                weightMatrix = c.*pr;
+            case 4
+                s = sum(deletedWeights(:));
+                compensationFactor = s/length(remainingIndices(:));
+                weightMatrix = pr;
+                weightMatrix(remainingIndices(:)) = weightMatrix(remainingIndices(:)) + compensationFactor;
+            case 5
+                s = abs(sum(deletedWeights(:)));
+                compensationFactor = s/length(remainingIndices(:));
+                weightMatrix = pr;
+                weightMatrix(remainingIndices(:)) = weightMatrix(remainingIndices(:)) + compensationFactor;
+            case 6 
+                s = abs(sum(deletedWeights(:)));
+                compensationFactor = s/length(remainingIndices(:));
+                weightMatrix = pr;
+                weightMatrix(weightMatrix<0) = weightMatrix(weightMatrix<0) - compensationFactor;
+                weightMatrix(weightMatrix>0) = weightMatrix(weightMatrix>0) + compensationFactor;
+            case 7
+                s = sum(abs(deletedWeights(:)));
+                compensationFactor = s/length(remainingIndices(:));
+                weightMatrix = pr;
+                weightMatrix(remainingIndices(:)) = weightMatrix(remainingIndices(:)) + compensationFactor;
+            case 8
+                s = sum(abs(deletedWeights(:)));
+                compensationFactor = s/length(remainingIndices(:));
+                weightMatrix = pr;
+                weightMatrix(weightMatrix<0) = weightMatrix(weightMatrix<0) - compensationFactor;
+                weightMatrix(weightMatrix>0) = weightMatrix(weightMatrix>0) + compensationFactor;
+        end
+        h.SetWeightMatrix(weightMatrix);
+        
+        % Test all stored patterns with current strategy
+        for j = 1:nPatterns
+            originalPattern = patternMatrix(j,:);
+            distortedPattern = h.DistortPattern(originalPattern, 0.1);
 
-for dIndex = 1:nD
-    [prunedWeights,deletedWeights, remainingIndices] = h.PruneWeightMatrix(or,dValues(dIndex),'neuron');
-    for kIndex = 1:nK  
-        display(['Running : ' num2str(dIndex) '/' num2str(nD) ', ' num2str(kIndex) '/' num2str(nK)])
-        k = kValues(kIndex);
-        for strategyIndex = 1:nStrategies
-            switch strategyIndex
-                case 1
-                    s = sum(deletedWeights);
-                    compensationFactor = s*k/length(remainingIndices);
-                    compensatedWeights = prunedWeights;
-                    compensatedWeights(remainingIndices) = compensatedWeights(remainingIndices) + compensationFactor;
-                case 2
-                    s = abs(sum(deletedWeights));
-                    compensationFactor = s*k/length(remainingIndices);
-                    compensatedWeights = prunedWeights;
-                    compensatedWeights(remainingIndices) = compensatedWeights(remainingIndices) + compensationFactor;
-                case 3
-                    s = abs(sum(deletedWeights));
-                    compensationFactor = s*k/length(remainingIndices);
-                    compensatedWeights = prunedWeights;
-                    remainingWeights = compensatedWeights(remainingIndices);
-                    neg = find(remainingWeights <= 0);
-                    pos = find(remainingWeights > 0);
-                    compensatedWeights(remainingIndices(neg)) = compensatedWeights(remainingIndices(neg))-compensationFactor;
-                    compensatedWeights(remainingIndices(pos)) = compensatedWeights(remainingIndices(pos))+compensationFactor;
-                case 4
-                    s = sum(abs(deletedWeights));
-                    compensationFactor = s*k/length(remainingIndices);
-                    compensatedWeights = prunedWeights;
-                    compensatedWeights(remainingIndices) = compensatedWeights(remainingIndices) + compensationFactor;
-                case 5
-                    s = sum(abs(deletedWeights));
-                    compensationFactor = s*k/length(remainingIndices);
-                    compensatedWeights = prunedWeights;
-                    remainingWeights = compensatedWeights(remainingIndices);
-                    neg = find(remainingWeights<=0);
-                    pos = find(remainingWeights>0);
-                    compensatedWeights(remainingIndices(neg)) = compensatedWeights(remainingIndices(neg))-compensationFactor;
-                    compensatedWeights(remainingIndices(pos)) = compensatedWeights(remainingIndices(pos))+compensationFactor;
-            end
-
-            h.SetWeightMatrix(compensatedWeights);
-            % Now, start the network with each possible starting state
-            % for both the pruned and original network and test if it
-            % leads to the same attractor
-            for i = 1:size(startingStates,1)
-                finalState = h.Converge(startingStates(i,:));
-
-                if sum(finalState(2:end)==finalStates2(i,:)) == (N-1)
-                    overlapData(kIndex,dIndex,strategyIndex) = overlapData(kIndex,dIndex,strategyIndex) + 1;
-                end
+            finalState = h.Converge(distortedPattern);
+            if sum(finalState == originalPattern) == networkSize
+                recallData(compensationStrategy,i) = recallData(compensationStrategy,i) + 1;
             end
         end
+        
+        
     end
 end
+recallData = recallData./nPatterns;
 %%
-clf
-for i = 1:nStrategies
-    subplot(2,3,i)
-    imshow(squeeze(overlapData(:,:,i)),[0 1],'InitialMagnification','fit'),colorbar
-    axis on
-    set(gca,'XTick',1:nD,'XTickLabel',dValues,'YTick',1:nK,'YTickLabel',kValues)
-    xlabel('Deletion factor'),ylabel('Compensation factor')
-    colormap jet
-    axis square
-end
+clf,
+hold on
+plot(dValues,recallData(1,:))
+plot(dValues,recallData(2,:),'-.k')
+xlabel('Deletion factor')
+ylabel('P(correct)')
