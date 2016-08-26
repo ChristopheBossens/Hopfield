@@ -46,7 +46,7 @@ classdef Hopfield < handle
             end
         end
         function patternMatrix = GeneratePatternMatrix(obj, nPatterns, patternActivity)
-            if nargin == 1
+            if nargin == 2
                 patternActivity = 0.5;
             end
             patternMatrix = zeros(nPatterns, obj.networkSize);
@@ -117,9 +117,7 @@ classdef Hopfield < handle
                 end
             end
             
-            % Store the pattern. Because low activity patterns need to be
-            % modified by the user, we apply a small trick so that the
-            % original pattern values are stored
+            % Store the pattern
             M = mean(nextPattern);
             nextPattern(nextPattern > M) = obj.unitValues(2);
             nextPattern(nextPattern < M) = obj.unitValues(1);
@@ -420,6 +418,22 @@ classdef Hopfield < handle
                 pcVector(patternIndex) = pcVector(patternIndex)./patternIndex;
             end
         end
+        
+        function [overlapVector, itVector] = TestRecall(obj,patternMatrix,noiseLevel)
+            nPatterns = size(patternMatrix,1);
+            
+            overlapVector = zeros(1,nPatterns);
+            itVector = zeros(1,nPatterns);
+            
+            for patternIndex = 1:nPatterns
+                originalPattern = patternMatrix(patternIndex,:);
+                distortedPattern = obj.DistortPattern(originalPattern,noiseLevel);
+                [finalState,it] = obj.Converge(distortedPattern);
+                
+                overlapVector(patternIndex) = (finalState*originalPattern')/obj.networkSize;
+                itVector(patternIndex) = it;
+            end
+        end
     end
     
     
@@ -430,42 +444,59 @@ classdef Hopfield < handle
         % connections are deleted
         % - 'random': A random proportion of synapses is removed
         % - 'neuron': A random proportion of neurons is removed
-        function prunedWeightMatrix = PruneWeightMatrix(weightMatrix,d, method)
+        function [prunedWeightMatrix, deletedWeights, remainingIndices] = PruneWeightMatrix(weightMatrix,d, method)
             if nargin == 2
                 method = 'incoming';
             end
             
-            
-            prunedWeightMatrix = weightMatrix;
+            networkSize = size(weightMatrix,2);
+            prunedWeightMatrix = weightMatrix;           
+            selfIndices = 1:(networkSize+1):length(prunedWeightMatrix(:));
             
             switch method
                 case 'incoming'
-                    for rowIndex = 1:size(prunedWeightMatrix,1)
-                        delIndices = setdiff(randperm(size(prunedWeightMatrix,2)),rowIndex);
-                        delIndices = delIndices(randperm(length(delIndices)));
-                        
-                        delLimit = round(d*size(prunedWeightMatrix,2));
-                        if delLimit > 0
-                            delIndices = delIndices(1:delLimit);
-                            prunedWeightMatrix(rowIndex,delIndices) = 0;
+                    delLimit = round(d*networkSize);
+                                       
+                    if delLimit == 0
+                        deletedWeights = 0;
+                        remainingIndices = setdiff(1:(networkSize*networkSize),selfIndices);
+                    else
+                        deletedWeights = zeros(networkSize,delLimit);
+                        nRemainingIndices = networkSize-delLimit-1;
+                        remainingIndices = zeros(networkSize,nRemainingIndices);
+                    
+                        for rowIndex = 1:size(prunedWeightMatrix,1)
+                            delIndices = setdiff(randperm(networkSize),rowIndex);
+                            delIndices = delIndices(randperm(length(delIndices)));
+
+                            deletedWeights( rowIndex,:) = prunedWeightMatrix(rowIndex,delIndices(1:delLimit))';
+                            prunedWeightMatrix(rowIndex,delIndices(1:delLimit)) = 0;
+                            remainingIndices(rowIndex,:) = sub2ind(size(weightMatrix),rowIndex.*ones(1,nRemainingIndices),delIndices( (delLimit+1):end));
                         end
                     end
                     
                 case 'random'
                     delIndices = randperm(length(prunedWeightMatrix(:)));
-                    selfIndices = 1:(size(prunedWeightMatrix,1)+1):length(prunedWeightMatrix(:));
                     delIndices = setdiff(delIndices,selfIndices);
                     delIndices = delIndices(randperm(length(delIndices)));
                     
                     delLimit = round(d*length(prunedWeightMatrix(:)));
-                    prunedWeightMatrix(delIndices(1:delLimit)) = 0;
-                
-                case 'neuron'
-                    delNeurons = randperm(size(prunedWeightMatrix,1));
-                    delLimit = round(d*size(prunedWeightMatrix,1));
                     
+                    deletedWeights = prunedWeightMatrix(delIndices(1:delLimit));
+                    remainingIndices = setdiff(1:(networkSize*networkSize),[delIndices(1:delLimit) selfIndices]);
+                    prunedWeightMatrix(delIndices(1:delLimit)) = 0;
+                    remainingIndices = setdiff(remainingIndices(:),selfIndices);
+                case 'neuron'
+                    delNeurons = randperm(networkSize);
+                    delLimit = round(d*networkSize);
+                    
+                    deletedWeights = prunedWeightMatrix(:,delNeurons(1:delLimit));
+                    deletedWeights = [deletedWeights; prunedWeightMatrix(delNeurons(1:delLimit),:)'];
+                    deletedWeights = deletedWeights(:)';
+                    remainingIndices = setdiff(1:networkSize,delNeurons(1:delLimit));
                     prunedWeightMatrix(:,delNeurons(1:delLimit)) = 0;
-            end
+                    prunedWeightMatrix(delNeurons(1:delLimit),:) = 0;
+            end           
         end
         
         % Takes a trained hopfield network together with a pattern matrix
