@@ -213,7 +213,9 @@ classdef Hopfield < handle
             obj.updateDynamics = 'stochastic';
             obj.beta = beta;
         end
-        
+        function currentState = GetCurrentState(obj)
+            currentState = obj.currentState;
+        end
         % Clamp the state of the model to a specific set of values
         function ClampState(obj,newState)
             if length(newState) ~= obj.networkSize
