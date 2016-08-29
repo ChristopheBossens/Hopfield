@@ -57,22 +57,13 @@ strongResult = squeeze(abs(results(:,1,:)));
 weakResult = squeeze(abs(results(:,2,:)));
 
 figure,
-subplot(1,3,1),imshow(strongResult,[0 1],'InitialMagnification','fit')
-set(gca,'XTick',[1:7:nLoads],'XTickLabel',networkLoad(1:7:nLoads))
-set(gca,'YTick',[1:10:nAdaptations],'YTickLabel',adaptationValues(1:10:nAdaptations),'YDir','normal')
-xlabel('Saturation'),ylabel('Adaptation'),
-subplot(1,3,2),imshow(weakResult,[0 1],'InitialMagnification','fit')
-set(gca,'XTick',[1:7:nLoads],'XTickLabel',networkLoad(1:7:nLoads))
-set(gca,'YTick',[1:10:nAdaptations],'YTickLabel',adaptationValues(1:10:nAdaptations),'YDir','normal')
-xlabel('Saturation'),ylabel('Adaptation'),
-subplot(1,3,3)
 imshow(strongResult-weakResult,[-1 1],'InitialMagnification','fit'),
 colormap hot
 colorbar
 axis on, axis square
 set(gca,'XTick',[1:7:nLoads],'XTickLabel',networkLoad(1:7:nLoads))
 set(gca,'YTick',[1:10:nAdaptations],'YTickLabel',adaptationValues(1:10:nAdaptations),'YDir','normal')
-xlabel('Saturation'),ylabel('Adaptation'),
+xlabel('Saturation'),ylabel('Adaptation'),title('SFA')
 %% Simulations for reproducing figure 1c,d,e
 clc;clear
 N = 1000;
@@ -140,7 +131,6 @@ networkLoad = 0.02:0.005:0.20;
 tValues = [0.001:0.002:0.17];
 nLoads = length(networkLoad);
 nT = length(tValues);
-
 results = zeros(nT,nLoads);
 for loadIndex = 1:nLoads
     alpha = networkLoad(loadIndex);
@@ -148,26 +138,26 @@ for loadIndex = 1:nLoads
     
     % Generate pattern matrix with strong and weak patterns
     p = h.GeneratePatternMatrix(P,0.5);
-    w = ones(1,P);
-    w(1) = 3;
+    w = 0.5.*ones(1,P);
+    w(1) = 1;
     h.ResetWeightMatrix()
     for i = 1:P
         h.AddPattern(p(i,:),w(i)/(N*sum(w)));
     end
     
     for tIndex = 1:nT
+        % 
+        display(['Load : ' num2str(loadIndex) '/' num2str(nLoads) ', temperature: ' num2str(tIndex) '/' num2str(nT)])
         % Test different patterns for a fixed amount of steps
         h.UseStochasticDynamics(1/tValues(tIndex));
         patternId = 2;
         initialState = p(patternId,:);
+        h.ClampState(initialState);
         for i = 1:nSteps
             nextUnit = randi(N,1);
-            finalState = h.UpdateUnit(nextUnit);
-            
-            if (finalState(nextUnit) ~= initialState(nextUnit))
-                initialState(nextUnit) = finalState(nextUnit);
-            end
+            h.UpdateUnit(nextUnit);
         end
+        finalState = h.GetCurrentState();
         strongOverlap = (finalState*p(1,:)')/N;
         weakOverlap   = (finalState*p(patternId,:)')/N;
         results(tIndex,loadIndex) = abs(strongOverlap)-abs(weakOverlap);
