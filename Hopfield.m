@@ -444,7 +444,7 @@ classdef Hopfield < handle
         % connections are deleted
         % - 'random': A random proportion of synapses is removed
         % - 'neuron': A random proportion of neurons is removed
-        function [prunedWeightMatrix, deletedWeights, remainingIndices] = PruneWeightMatrix(weightMatrix,d, method)
+        function [prunedWeightMatrix, deletedWeights, remainingIndices, remainingNeurons] = PruneWeightMatrix(weightMatrix,d, method)
             if nargin == 2
                 method = 'incoming';
             end
@@ -452,9 +452,10 @@ classdef Hopfield < handle
             networkSize = size(weightMatrix,2);
             prunedWeightMatrix = weightMatrix;           
             selfIndices = 1:(networkSize+1):length(prunedWeightMatrix(:));
+            remainingNeurons = [];
             
             switch method
-                case 'incoming'
+                case 'synapse'
                     delLimit = round(d*networkSize);
                                        
                     if delLimit == 0
@@ -482,20 +483,42 @@ classdef Hopfield < handle
                     
                     delLimit = round(d*length(prunedWeightMatrix(:)));
                     
-                    deletedWeights = prunedWeightMatrix(delIndices(1:delLimit));
-                    remainingIndices = setdiff(1:(networkSize*networkSize),[delIndices(1:delLimit) selfIndices]);
-                    prunedWeightMatrix(delIndices(1:delLimit)) = 0;
-                    remainingIndices = setdiff(remainingIndices(:),selfIndices);
+                    if delLimit == 0
+                        deletedWeights = 0;
+                        remainingIndices = setdiff(1:(networkSize*networkSize),selfIndices);
+                    else 
+                        deletedWeights = prunedWeightMatrix(delIndices(1:delLimit));
+                        remainingIndices = setdiff(1:(networkSize*networkSize),[delIndices(1:delLimit) selfIndices]);
+                        prunedWeightMatrix(delIndices(1:delLimit)) = 0;
+                        remainingIndices = setdiff(remainingIndices(:),selfIndices);
+                    end
+                    
                 case 'neuron'
                     delNeurons = randperm(networkSize);
                     delLimit = round(d*networkSize);
                     
-                    deletedWeights = prunedWeightMatrix(:,delNeurons(1:delLimit));
-                    deletedWeights = [deletedWeights; prunedWeightMatrix(delNeurons(1:delLimit),:)'];
-                    deletedWeights = deletedWeights(:)';
-                    remainingIndices = setdiff(1:networkSize,delNeurons(1:delLimit));
-                    prunedWeightMatrix(:,delNeurons(1:delLimit)) = 0;
-                    prunedWeightMatrix(delNeurons(1:delLimit),:) = 0;
+                    if delLimit == 0
+                        deletedWeights = 0;
+                        remainingIndices = 1:(networkSize*networkSize);
+                        remainingNeurons = 1:networkSize;
+                    else
+                        deletedWeights = prunedWeightMatrix(:,delNeurons(1:delLimit));
+                        prunedWeightMatrix(:,delNeurons(1:delLimit)) = 0;
+                        deletedWeights = [deletedWeights; prunedWeightMatrix(delNeurons(1:delLimit),:)'];
+                        prunedWeightMatrix(delNeurons(1:delLimit),:) = 0;
+                        
+                        deletedWeights = deletedWeights(:)';
+                        
+                        remainingNeurons = delNeurons((delLimit+1):end);
+                        nRemainingNeurons = length(remainingNeurons);
+                        remainingIndices = zeros(2*nRemainingNeurons,nRemainingNeurons);
+                        for j = 1:nRemainingNeurons
+                            remainingIndices( 2*j - 1,:) = sub2ind(size(prunedWeightMatrix),remainingNeurons,remainingNeurons(j).*ones(1,nRemainingNeurons));
+                            remainingIndices( 2*j, :)    = sub2ind(size(prunedWeightMatrix),remainingNeurons(j).*ones(1,nRemainingNeurons),remainingNeurons);
+                        end
+                        selfIndices = 1:(networkSize+1):length(prunedWeightMatrix(:));
+                        remainingIndices = unique(setdiff(remainingIndices(:),selfIndices));
+                    end
             end           
         end
         
