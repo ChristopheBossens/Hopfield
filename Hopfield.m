@@ -504,7 +504,7 @@ classdef Hopfield < handle
                             remainingIndices(rowIndex,:) = sub2ind(size(weightMatrix),rowIndex.*ones(1,nRemainingIndices),delIndices( (delLimit+1):end));
                         end
                     end
-                    
+                    remainingIndices = remainingIndices(:);
                 case 'random'
                     delIndices = randperm(length(prunedWeightMatrix(:)));
                     delIndices = setdiff(delIndices,selfIndices);

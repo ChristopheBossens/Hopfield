@@ -4,43 +4,49 @@ networkSize = 800;
 alpha = 0.05;
 sparseness = 0.1;
 T = sparseness*(1-sparseness)*(1-2*sparseness)/2;
-dValues = [0:0.01:.50];
+nPatterns = round(alpha*networkSize);
+
+dValues = 0:0.01:.50;
 nD = length(dValues);
 
 h = Hopfield(networkSize);
 h.SetThreshold(T);
 h.SetUnitModel('V');
 strategies = {'synapse','random','neuron'};
-nSimulations = 50;
+nSimulations = 5;
 recallData = zeros(nSimulations,3,8,nD);
+compensationStrategies = [1 2 3 8];
 
-
-% Generate the pattern matrix
+% Start the simulation loop
 for simulationIndex = 1:nSimulations
-    nPatterns = round(alpha*networkSize);
-    patternMatrix = h.GeneratePatternMatrix(nPatterns,sparseness);
+    % For each simulation, generate a different pattern matrix
     h.ResetWeightMatrix();
+    patternMatrix = h.GeneratePatternMatrix(nPatterns,sparseness);
     h.AddPatternMatrix(patternMatrix-sparseness,1/networkSize);
-
-    for i = 1:nPatterns
-        originalPattern = patternMatrix(i,:);
-        distortedPattern  = h.DistortPattern(originalPattern,0.1);
-        finalPattern = h.Converge(distortedPattern);
-
-        if sum(finalPattern == originalPattern) == networkSize
-            recallData(i) = 1;
-        end
-    end
     or = h.GetWeightMatrix();
-    % Prepare the simulation
+    
+    % Test for different deletion strategies
     for strategyIndex = 1:length(strategies)
         pruningStrategy = strategies{strategyIndex};
+        
+        % Test for different degrees of deletion
         for i = 1:nD
+            clc;
+            display(['Simulation: ' num2str(simulationIndex) '/' num2str(nSimulations)]);
             display(['Testing deletion: ' num2str(i) '/' num2str(nD)]);
+            display(['Using strategy: ' pruningStrategy]);
             [pr, deletedWeights, remainingIndices, remainingNeurons] = h.PruneWeightMatrix(or,dValues(i),pruningStrategy);       
-
+            nRemainingIndices = length(remainingIndices);
+            
             % Apply different compensation strategies
-            for compensationStrategy = [1 2 3 8]
+            % The first and second strategy correspond to the original
+            % weights and the pruned weights only to establish baseline
+            % performance levels.
+            % Strategy 3 corresponds to the one reported in Horn, Rupin,
+            % Usher and Herman.
+            % Strategies 4-8 correspond to the strategies discussed in
+            % Menezes and Monteiro.
+            for compensationStrategy = compensationStrategies
                 switch compensationStrategy
                     case 1
                         weightMatrix = or;
@@ -88,7 +94,7 @@ for simulationIndex = 1:nSimulations
                     finalState = h.Converge(distortedPattern);
                     if strcmp(pruningStrategy,'neuron')
                         if sum(finalState(remainingNeurons) == originalPattern(remainingNeurons)) == length(remainingNeurons)
-                            recallData(compensationStrategy,i) = recallData(compensationStrategy,i) + 1;
+                            recallData(simulationIndex,strategyIndex,compensationStrategy,i) = recallData(simulationIndex,strategyIndex,compensationStrategy,i) + 1;
                         end
                     else
                         if sum(finalState == originalPattern) == networkSize
@@ -103,11 +109,14 @@ for simulationIndex = 1:nSimulations
     end
 end
 recallData = recallData./nPatterns;
-%% Plot the results from the different compensation strategies
+%%
 clf,
-for i = 3:8
-    subplot(2,3,i-2),hold on
-    plot(dValues,recallData(2,:),'-.k')
-    plot(dValues,recallData(i,:),'k')
-    set(gca,'YLim',[0 1])
+M = squeeze(mean(recallData));
+M = squeeze((recallData));
+for i = 1:3
+    subplot(1,3,i), hold on
+    plot(dValues,squeeze(M(i,1,:)),'k','LineWidth',2)
+    plot(dValues,squeeze(M(i,2,:)),'--k','LineWidth',2)
+    plot(dValues,squeeze(M(i,3,:)),'g','LineWidth',2)
+    plot(dValues,squeeze(M(i,8,:)),'--g','LineWidth',2)
 end
