@@ -96,7 +96,7 @@ classdef Hopfield < handle
             end
             
             % Check if pattern has correct length
-            if size(obj.synapseWeights) ~= length(nextPattern)
+            if obj.networkSize ~= length(nextPattern)
                 error('Pattern size not consistent with current weight matrix');
             end
             
@@ -134,6 +134,22 @@ classdef Hopfield < handle
             
             for i = 1:size(patternMatrix,1)
                 obj.AddPattern(patternMatrix(i,:),C);
+            end
+        end
+        
+        % Add a pattern to the matrix using the delta learning rule
+        function outputError = PerformDeltaUpdate(obj, nextPattern, etha)
+            if obj.networkSize ~= length(nextPattern)
+                error('Pattern size not consistent with current weight matrix');
+            end
+            
+            currentOutput = obj.Iterate(nextPattern);
+            outputError = nextPattern(:) - currentOutput(:);           
+            deltaW = outputError*nextPattern(:)' + nextPattern(:)*outputError(:)';
+            obj.synapseWeights = obj.synapseWeights + etha.*deltaW;
+            
+            if strcmp(obj.selfConnections,'noself')
+                obj.synapseWeights(1:(obj.networkSize+1):(obj.networkSize*obj.networkSize)) = 0;
             end
         end
         
@@ -466,6 +482,16 @@ classdef Hopfield < handle
                 
                 overlapVector(patternIndex) = (finalState*originalPattern')/obj.networkSize;
                 itVector(patternIndex) = it;
+            end
+        end
+        
+        function isStable = IsStablePattern(obj,testPattern)
+            output = obj.Iterate(testPattern);
+            
+            if sum(output==testPattern) == obj.networkSize
+                isStable = 1;
+            else
+                isStable = 0;
             end
         end
     end
