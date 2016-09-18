@@ -13,7 +13,7 @@ classdef Hopfield < handle
         clipMode  = 'noclip';
         clipValue = 1;
         updateMode = 'async';
-        activityNormalization = 'off';
+        activityNormalization = 'on';
         updateDynamics = 'deterministic';
         beta = 1.0;
         
@@ -105,6 +105,10 @@ classdef Hopfield < handle
                 nextPattern = nextPattern';
             end
             
+            if strcmp(obj.activityNormalization,'on')
+                nextPattern = nextPattern-mean(nextPattern);
+            end
+            
             obj.synapseWeights = obj.gamma.*obj.synapseWeights + C.*(nextPattern*nextPattern');
             
             % Check if clipping needs to be applied
@@ -121,14 +125,11 @@ classdef Hopfield < handle
             end
             
             % Store the pattern
-            M = mean(nextPattern);
-            nextPattern(nextPattern > M) = obj.unitValues(2);
-            nextPattern(nextPattern < M) = obj.unitValues(1);
             obj.storedPatterns = [obj.storedPatterns; nextPattern'];
         end
         function AddPatternMatrix(obj,patternMatrix,C)
             if nargin == 2
-                C = size(patternMatrix,2);
+                C = 1/size(patternMatrix,2);
             end
             
             for i = 1:size(patternMatrix,1)
@@ -224,6 +225,7 @@ classdef Hopfield < handle
             end
             obj.currentState = newState;
         end
+        
         % Here we perform the state update of the hopfield network. Updates
         % are performed synchronously (i.e. all units at the same time), or
         % asynchronously (each unit in turn, but in random order)
@@ -251,7 +253,6 @@ classdef Hopfield < handle
                         obj.UpdateUnit(updateOrder(unitIdx));
                     end
             end
-            
             output = obj.currentState;
         end
         
@@ -397,6 +398,10 @@ classdef Hopfield < handle
         % distribution of inputs for each active and inactive unit in each
         % pattern.
         function [counts, bins, potentialValues, activityValues] = GetPotentialDistribution(obj, nBins)
+            if nargin == 1
+                nBins = 100;
+            end
+            
             nPatterns = size(obj.storedPatterns,1);
                        
             potentialValues = zeros(1,size(obj.synapseWeights,1)*nPatterns);
@@ -475,7 +480,7 @@ classdef Hopfield < handle
         % - 'neuron': A random proportion of neurons is removed
         function [prunedWeightMatrix, deletedWeights, remainingIndices, remainingNeurons] = PruneWeightMatrix(weightMatrix,d, method)
             if nargin == 2
-                method = 'incoming';
+                method = 'synapse';
             end
             
             networkSize = size(weightMatrix,2);
