@@ -23,6 +23,7 @@ classdef Hopfield < handle
         unitValues = [-1 1];
         
         maxIterations = 100;
+        maxDeltaIterationMultiplier = 100;
     end
     
     methods
@@ -153,6 +154,28 @@ classdef Hopfield < handle
             end
         end
         
+        % Add patterns from the input matrix using the delta learning rule
+        function LearnDeltaPatterns(obj, patternMatrix, etha)
+            zeroError = 0;
+            currentIteration = 1;
+            nPatterns = size(patternMatrix,1);
+            
+            while zeroError == 0
+                err = zeros(1,nPatterns);
+                for trainingIndex = 1:nPatterns
+                    err(trainingIndex) = mean(abs(obj.PerformDeltaUpdate(patternMatrix(trainingIndex,:),etha)));
+                end
+                
+                if sum(err) == 0
+                    zeroError = 1;
+                end
+                
+                currentIteration = currentIteration + 1;
+                if currentIteration > (obj.maxDeltaIterationMultiplier*nPatterns)
+                    error('Maximum training iterations for delta learning rule exceeded!');
+                end
+            end
+        end
         % Fetch and manipulate the weight matrix manually
         function ResetWeightMatrix(obj)
             obj.storedPatterns = [];
@@ -202,7 +225,7 @@ classdef Hopfield < handle
             validModes = {'on','off'};
             
             for i = 1:length(validModes)
-                if strcmpi(normalizationMode,validModes{i})
+                if strcmpi(activityNormalization,validModes{i})
                     obj.activityNormalization = activityNormalization;
                     return;
                 end

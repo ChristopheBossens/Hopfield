@@ -1,101 +1,117 @@
+% This section runs a simulation that probes the capacity for a network
+% trained with delta learning and Hebbian learning. For Hebbian learning,
+% a second network is run which uses threshold values to adjust for low
+% activity patterns
 clc;clear;
-N = 100;
+N = 120;
 P = 30;
 
 hebNet = Hopfield(N);
+hebNet.SetUnitModel('S');
 deltaNet = Hopfield(N);
-patternMatrix = hebNet.GeneratePatternMatrix(P);
-stabilityResults = zeros(2,P);
-finalOverlap = zeros(2,P);
 
-for patternIndex = 1:P
-    clc;display(['Adding pattern ' num2str(patternIndex) '/' num2str(P)]);
-   hebNet.AddPattern(patternMatrix(patternIndex,:),1);
-   
-   zeroError = 0;
-   while zeroError == 0
-       err = zeros(1,patternIndex);
-       for trainingIndex = 1:patternIndex
-           err(trainingIndex) = abs(mean(deltaNet.PerformDeltaUpdate(patternMatrix(trainingIndex,:),1)));
+sparseness = [0.1 0.3 0.5];
+threshold  = [50  40  0];
+nSparseValues = length(sparseness);
+
+stabilityResults = zeros(nSparseValues,P,3);
+for sparsenessIndex = 1:nSparseValues
+    % Generate network with specified degree of sparseness
+    patternMatrix = hebNet.GeneratePatternMatrix(P,sparseness(sparsenessIndex));
+    
+    % Add patterns and validate if patterns are stable states of the net
+    hebNet.ResetWeightMatrix();
+    deltaNet.ResetWeightMatrix();
+    for patternIndex = 1:P
+       clc;display(['Adding pattern ' num2str(patternIndex) '/' num2str(P)]);
+       hebNet.AddPattern(patternMatrix(patternIndex,:),1);
+       deltaNet.LearnDeltaPatterns(patternMatrix(1:patternIndex,:),1);
+        
+       stableHebbPatterns = 0;
+       stableDeltaPatterns =0;
+       stableAdjPatterns  = 0;
+       for testIndex = 1:patternIndex      
+           stableHebbPatterns = stableHebbPatterns + hebNet.IsStablePattern(patternMatrix(testIndex,:));
+           stableDeltaPatterns = stableDeltaPatterns + deltaNet.IsStablePattern(patternMatrix(testIndex,:));                  
+           
+           hebNet.SetThreshold(threshold(sparsenessIndex));
+           stableAdjPatterns = stableAdjPatterns + hebNet.IsStablePattern(patternMatrix(testIndex,:));
+           hebNet.SetThreshold(0);
        end
-       
-       if sum(err) == 0
-           zeroError = 1;
-       end
-   end
-   
-   for testIndex = 1:patternIndex      
-       stabilityResults(1,patternIndex) = stabilityResults(1,patternIndex) + hebNet.IsStablePattern(patternMatrix(testIndex,:));
-       stabilityResults(2,patternIndex) = stabilityResults(2,patternIndex) + deltaNet.IsStablePattern(patternMatrix(testIndex,:));
-       
-       output1 = hebNet.Converge(patternMatrix(testIndex,:));
-       output2 = deltaNet.Converge(patternMatrix(testIndex,:));
-       finalOverlap(1,patternIndex) = finalOverlap(1,patternIndex) + (output1*patternMatrix(testIndex,:)')/N;
-       finalOverlap(2,patternIndex) = finalOverlap(2,patternIndex) + (output2*patternMatrix(testIndex,:)')/N;
-   end
-   stabilityResults(:,patternIndex) = stabilityResults(:,patternIndex)/patternIndex;
-   finalOverlap(:,patternIndex) = finalOverlap(:,patternIndex)/patternIndex;
+       stabilityResults(sparsenessIndex,patternIndex,:) = [stableHebbPatterns stableDeltaPatterns stableAdjPatterns]/patternIndex;
+    end
 end
 %%
-clf,subplot(1,2,1)
-hold on
-plot(stabilityResults(1,:),'b','LineWidth',2)
-plot(stabilityResults(2,:),'g','LineWidth',2)
-set(gca,'YLim',[0 1])
-title('Stability results')
-xlabel('Patterns added')
-ylabel('Proportion stable')
-
-subplot(1,2,2)
-hold on
-plot(finalOverlap(1,:),'b','LineWidth',2)
-plot(finalOverlap(2,:),'g','LineWidth',2)
-title('Overlap results')
-
-%% Error correction capabilities
-% Add patterns so that the load for the Hebb net remains under the capacity
-% limit.
-P = 10;
-patternMatrix = hebNet.GeneratePatternMatrix(P);
-
-hebNet.ResetWeightMatrix();
-deltaNet.ResetWeightMatrix();
-
-hebNet.AddPatternMatrix(patternMatrix);
-
-zeroError = 0;
-while zeroError == 0
-   err = zeros(1,patternIndex);
-   for trainingIndex = 1:P
-       err(trainingIndex) = abs(mean(deltaNet.PerformDeltaUpdate(patternMatrix(trainingIndex,:),1/N)));
-   end
-
-   if sum(err) == 0
-       zeroError = 1;
-   end
+clf,
+for i = 1:3
+    subplot(1,3,i)
+    hold on
+    plot(stabilityResults(i,:,1),'b','LineWidth',2)
+    plot(stabilityResults(i,:,2),'g','LineWidth',2)
+    plot(stabilityResults(i,:,3),'--b','LineWidth',2)
+    set(gca,'YLim',[0 1.1])
+    title(['p = ' num2str(sparseness(i))])
+    xlabel('Patterns added'),ylabel('Proportion stable')
+    axis square
 end
 
-bitsFlipped = [1:30];
+%% Error correction capabilities
+% Test to what extent the Hebbian rule and the delta rule are able to
+% recover from distorted patterns
+P = 8;
+
+bitsFlipped = 1:30;
 nBitsFlipped = length(bitsFlipped);
-errorCorrection = zeros(2,nBitsFlipped);
+errorCorrection = zeros(3,3,nBitsFlipped);
+iterations = zeros(3,3,nBitsFlipped);
 
-for i = 1:nBitsFlipped
-    for j = 1:P
-        inputPattern = patternMatrix(j,:);
-        distortedPattern = hebNet.DistortPattern(inputPattern,bitsFlipped(i)/N);
+for sparsenessIndex = 1:nSparseValues
+    a = sparseness(sparsenessIndex);
+    denom = 1/(2*a*(1-a)*N);
+    patternMatrix = hebNet.GeneratePatternMatrix(P,a);
 
-        output1 = hebNet.Converge(distortedPattern);
-        output2 = deltaNet.Converge(distortedPattern);
+    hebNet.ResetWeightMatrix();
+    deltaNet.ResetWeightMatrix();
 
-        errorCorrection(1,i) = errorCorrection(1,i) + (output1*inputPattern')/N;
-        errorCorrection(2,i) = errorCorrection(2,i) + (output2*inputPattern')/N;
+    hebNet.AddPatternMatrix(patternMatrix,1);
+    deltaNet.LearnDeltaPatterns(patternMatrix,1);
+    for i = 1:nBitsFlipped
+        for j = 1:P
+            inputPattern = patternMatrix(j,:);
+            distortedPattern = hebNet.DistortPattern(inputPattern,bitsFlipped(i)/N);
+
+            [output1, it1] = hebNet.Converge(distortedPattern);
+            [output2, it2] = deltaNet.Converge(distortedPattern);
+            hebNet.SetThreshold(threshold(sparsenessIndex));
+            [output3, it3] = hebNet.Converge(distortedPattern);
+            hebNet.SetThreshold(0);
+            
+            vPattern = ((inputPattern+1)./2)-a;
+            errorCorrection(sparsenessIndex,1,i) = errorCorrection(sparsenessIndex,1,i) + sum(output1==inputPattern)/N;%(output1*inputPattern')/N;
+            errorCorrection(sparsenessIndex,2,i) = errorCorrection(sparsenessIndex,2,i) + sum(output2==inputPattern)/N;
+            errorCorrection(sparsenessIndex,3,i) = errorCorrection(sparsenessIndex,3,i) + sum(output3==inputPattern)/N;
+            iterations(sparsenessIndex,1,i) = iterations(sparsenessIndex,1,i) + it1;
+            iterations(sparsenessIndex,2,i) = iterations(sparsenessIndex,2,i) + it2;
+            iterations(sparsenessIndex,3,i) = iterations(sparsenessIndex,3,i) + it3;
+        end
     end
 end
 errorCorrection = errorCorrection./P;
+iterations = iterations./P;
 %%
 clf,
-hold on
-plot(errorCorrection(1,:),'b','LineWidth',2);
-plot(errorCorrection(2,:),'g','LineWidth',2);
-set(gca,'YLim',[0 1.1]),xlabel('Bits flipped'),ylabel('Average final overlap')
-title('Error correction results')
+for i = 1:3
+    subplot(2,3,i), hold on
+    plot(squeeze(errorCorrection(i,1,:)),'b','LineWidth',2);
+    plot(squeeze(errorCorrection(i,2,:)),'g','LineWidth',2);
+    plot(squeeze(errorCorrection(i,3,:)),'--b','LineWidth',2);
+    set(gca,'YLim',[0 1.5]),xlabel('Bits flipped'),ylabel('Average final overlap')
+    axis square
+    title(['sparseness = ' num2str(sparseness(i))])
+    subplot(2,3,i+3), hold on
+    plot(squeeze(iterations(i,1,:)),'b','LineWidth',2);
+    plot(squeeze(iterations(i,2,:)),'g','LineWidth',2);
+    plot(squeeze(iterations(i,3,:)),'--b','LineWidth',2);
+    set(gca,'YLim',[0 6]),xlabel('Bits flipped'),ylabel('Average converging time')
+    axis square
+end
