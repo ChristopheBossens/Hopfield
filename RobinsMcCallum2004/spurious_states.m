@@ -4,18 +4,30 @@ networkSize = 32;
 nPatterns = 4;
 nStateSamples = 1000;
 patternActivity = 0.5;
+deltaTrainingEpochs = 100;
 
-% Run the simulation
+% Select simulation type
+% 1: Standard Hebbian learning
+% 2: Delta learning
+% 3: Delta learning with noise
+simulationType = 3;
+
 hopfield = Hopfield(networkSize);
 patternMatrix = hopfield.GeneratePatternMatrix(nPatterns,0.5);
 
-hopfield.ResetWeights();
-for patternIndex = 1:nPatterns
-    hopfield.AddPattern(patternMatrix(patternIndex,:),1);
+switch simulationType
+    case 1
+        hopfield.AddPatternMatrix(patternMatrix,1);
+    case 2
+        hopfield.LearnDeltaPatterns(patternMatrix,0.5,deltaTrainingEpochs);
+    case 3
+        hopfield.SetInputNoise(0,networkSize);
+        hopfield.LearnDeltaPatterns(patternMatrix,0.5,deltaTrainingEpochs);
 end
+hopfield.SetInputNoise(0,0);
 
 [stablePatternMatrix, stablePatternCount, meanPatternIterations] = hopfield.SampleWithRandomStates(nStateSamples);
-isSpuriousState = hopfield.TestSpuriousStates(stablePatternMatrix,patternMatrix);
+[isSpuriousState, oldPatternIndex] = hopfield.AnalyseStableStates(stablePatternMatrix,patternMatrix);
 nStableStates = length(stablePatternCount);
 %% Construct figure 2 of the paper
 % Get the sorted unit energy
@@ -69,15 +81,84 @@ xlabel('Pattern')
 ylabel('Energy ratio')
 title('Stable state energy ratio')
 set(gca,'XTick',[1:nStableStates],'XTickLabel',patternLabel)
-%% Additional plots, showing network energy and iteration statistics
-networkEnergy = zeros(1,nPatterns);
-for i = 1:nStableStates
-    networkEnergy(i) = hopfield.GetEnergy(stablePatternMatrix(i,:));
-end
-subplot(1,2,1),
-boxplot(networkEnergy,isSpuriousState,'labels',{'Memory','Spurious'})
-title('Network energy')
-ylabel('Network energy')
+%% Assess the performance of energy ratio based discrimination
+% We perform multiple simulations in which we incrementally add new
+% patterns to the network and then test the performance of the
+% classification based on energy ratios
+clc;clear;
+nPatterns = 10;
+networkSize = 32;
+nProbes = 500;
+deltaTrainingEpochs = 40;
+nSimulations = 3;
 
-subplot(1,2,2),
-boxplot(meanPatternIterations,isSpuriousState,'labels',{'Memory','Spurious'})
+classificationData = zeros(nSimulations,3,nPatterns);
+for simulationIndex = 1:nSimulations
+    hopfield = Hopfield(networkSize);
+    patternMatrix = hopfield.GeneratePatternMatrix(nPatterns,0.5);
+
+    for patternIndex = 1:nPatterns
+        for networkType = 1:3
+            clc;
+            display(['Simulation ' num2str(simulationIndex) '/' num2str(nSimulations)])
+            display(['Network load : ' num2str(patternIndex/networkSize)]);
+            display(['Network type: ' num2str(networkType)]);
+            % Learn the given number of patterns
+            hopfield.ResetWeightMatrix();
+            switch networkType
+                case 1
+                    hopfield.AddPatternMatrix(patternMatrix(1:patternIndex,:),1);
+                case 2
+                    hopfield.LearnDeltaPatterns(patternMatrix(1:patternIndex,:),0.5,deltaTrainingEpochs);
+                case 3
+                    hopfield.SetInputNoise(0,networkSize/2);
+                    hopfield.LearnDeltaPatterns(patternMatrix(1:patternIndex,:),0.5,deltaTrainingEpochs);
+            end            
+            hopfield.SetInputNoise(0,0);
+            
+            % Get the lowest energy ratio
+            energyRatio = zeros(1,patternIndex);
+            for i = 1:patternIndex
+               unitEnergy = sort(hopfield.GetUnitEnergy(patternMatrix(i,:))); 
+               energyRatio(i) = sum(unitEnergy(1:3))/sum(unitEnergy((end-2):end));
+            end
+            energyCriterion = min(energyRatio);
+
+            % Probe the network with random probes and check which stable
+            % states correspond to spurious states or stored patterns
+            [stablePatternMatrix, stablePatternCount, meanPatternIterations] = hopfield.SampleWithRandomStates(nProbes);
+            [isSpuriousState, oldPatternIndex] = hopfield.AnalyseStableStates(stablePatternMatrix,patternMatrix(1:patternIndex,:));
+
+            % Test which of the stable states can be classified correctly
+            % according to the energy ratio criterion
+            correctCount = 0;
+            for j = 1:size(stablePatternMatrix,1)
+                unitEnergy = sort(hopfield.GetUnitEnergy(stablePatternMatrix(j,:)));
+                energyRatio = sum(unitEnergy(1:3))/sum(unitEnergy((end-2):end));
+
+                if ((energyRatio < energyCriterion) && (isSpuriousState(j) == 1)) || ...
+                        ((energyRatio >= energyCriterion) && (isSpuriousState(j) == 0))
+                    correctCount = correctCount + 1;
+                end
+            end
+            
+            classificationData(simulationIndex,networkType,patternIndex) = correctCount/size(stablePatternMatrix,1);
+        end
+    end
+end
+
+%%
+a = squeeze(mean(classificationData));
+e = squeeze(std(classificationData));
+x = (1:nPatterns)./networkSize;
+clf,hold on
+plot( x,a(1,:),'k','LineWidth',2)
+plot( x,a(2,:),'b','LineWidth',2)
+plot( x,a(3,:),'g','LineWidth',2)
+errorbar(x,a(1,:),e(1,:),'.k','LineWidth',2)
+errorbar(x,a(2,:),e(2,:),'.b','LineWidth',2)
+errorbar(x,a(3,:),e(3,:),'.g','LineWidth',2)
+legend('Hebbian','Delta','Delta + noise')
+title('Spurious state classification performance')
+ylabel('Proportion correct')
+xlabel('Network load')

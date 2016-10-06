@@ -24,6 +24,9 @@ classdef Hopfield < handle
         
         maxIterations = 100;
         maxDeltaIterationMultiplier = 100;
+        
+        inputNoiseMean = 0;
+        inputNoiseSd   = 0;
     end
     
     methods
@@ -155,26 +158,46 @@ classdef Hopfield < handle
         end
         
         % Add patterns from the input matrix using the delta learning rule
-        function LearnDeltaPatterns(obj, patternMatrix, etha)
+        function LearnDeltaPatterns(obj, patternMatrix, etha, fixedIterationCount)
+            if nargin == 4
+                useFixedIterations = 1;
+            else
+                useFixedIterations = 0;
+            end
+            
+            obj.storedPatterns = patternMatrix;
+            
             zeroError = 0;
             currentIteration = 1;
             nPatterns = size(patternMatrix,1);
             
             while zeroError == 0
+                % Present each pattern in turn to the network and adjust
+                % the weights
                 err = zeros(1,nPatterns);
                 for trainingIndex = 1:nPatterns
                     err(trainingIndex) = mean(abs(obj.PerformDeltaUpdate(patternMatrix(trainingIndex,:),etha)));
                 end
                 
-                if sum(err) == 0
-                    zeroError = 1;
-                end
-                
+                % Check if we should proceed with the next presentation of
+                % all patterns
                 currentIteration = currentIteration + 1;
-                if currentIteration > (obj.maxDeltaIterationMultiplier*nPatterns)
-                    error('Maximum training iterations for delta learning rule exceeded!');
+                if useFixedIterations == 1
+                    if currentIteration > fixedIterationCount
+                        return;
+                    end
+                else
+                    if currentIteration > (obj.maxDeltaIterationMultiplier*nPatterns)
+                        error('Maximum training iterations for delta learning rule exceeded!');
+                    end
+                    
+                    if sum(err) == 0
+                        zeroError = 1;
+                    end
                 end
             end
+            
+            
         end
         % Fetch and manipulate the weight matrix manually
         function ResetWeightMatrix(obj)
@@ -254,6 +277,10 @@ classdef Hopfield < handle
         function currentState = GetCurrentState(obj)
             currentState = obj.currentState;
         end
+        function SetInputNoise(obj, mu, sigma)
+            obj.inputNoiseMean = mu;
+            obj.inputNoiseSd   = sigma;
+        end
         % Clamp the state of the model to a specific set of values
         function ClampState(obj,newState)
             if length(newState) ~= obj.networkSize
@@ -276,7 +303,7 @@ classdef Hopfield < handle
             switch method
                 case 'sync'
                     inputPotential = obj.synapseWeights*obj.currentState';
-                    
+                    inputPotential = inputPotential + obj.inputNoiseMean + obj.inputNoiseSd.*randn(size(inputPotential));
                     if strcmp(obj.updateDynamics,'deterministic') == 1
                         obj.currentState( (inputPotential) > threshold) = obj.unitValues(2);
                         obj.currentState( (inputPotential) <= threshold) = obj.unitValues(1);
@@ -302,7 +329,8 @@ classdef Hopfield < handle
                 error('Only provide a single unit index')
             end
             
-            inputPotential = obj.synapseWeights(unitIndex,:)*obj.currentState';
+            inputNoise = obj.inputNoiseMean + obj.inputNoiseSd*rand();
+            inputPotential = obj.synapseWeights(unitIndex,:)*obj.currentState' + inputNoise; 
             if strcmp(obj.updateDynamics,'deterministic') == 1
                 if ( (inputPotential) > obj.unitThreshold(unitIndex))
                     obj.currentState(unitIndex) = obj.unitValues(2);

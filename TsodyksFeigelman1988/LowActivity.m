@@ -87,15 +87,16 @@ colormap jet, axis on
 % However, in the case of sparse activity, the distributions shift and the units that
 % need to be inactive receive synaptic input that is above zero.
 clear;
-networkSize = 567;
-nExemplars = 49;
+networkSize = 100;
+nExemplars = 5;
 
 hopfield = Hopfield(networkSize);
-hopfield.SetUnitModel('V');
-p = 0.8;
+hopfield.SetUnitModel('S');
+p = 0.5;
 
 exemplarMatrix = hopfield.GeneratePatternMatrix(nExemplars,p);
-hopfield.AddPatternMatrix(exemplarMatrix-mean(exemplarMatrix(1,:)),1/networkSize);
+%hopfield.AddPatternMatrix(exemplarMatrix-mean(exemplarMatrix(1,:)),1);
+hopfield.LearnDeltaPatterns(exemplarMatrix,0.5,100);
 [distribution, binValues] = hopfield.GetPotentialDistribution();
 
 clf,
