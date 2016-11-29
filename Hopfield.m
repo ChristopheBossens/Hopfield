@@ -3,13 +3,14 @@ classdef Hopfield < handle
     %   Detailed explanation goes here
     
     properties
-        backupWeights  = [];
-        synapseWeights = [];
-        storedPatterns = [];
-        currentState   = [];
+        backupWeights    = [];
+        weightMatrix     = [];
+        storedPatterns   = [];
+        currentState     = [];
+        connectionMatrix = [];
         
+        symmetricDelta = 0;
         unitModel = 'S';
-        selfConnections= 'noself';
         clipMode  = 'noclip';
         clipValue = 1;
         updateMode = 'async';
@@ -23,7 +24,7 @@ classdef Hopfield < handle
         unitValues = [-1 1];
         
         maxIterations = 100;
-        maxDeltaIterationMultiplier = 100;
+        maxDeltaIterations = 100;   % Maximum number of times a delta update is performed
         
         inputNoiseMean = 0;
         inputNoiseSd   = 0;
@@ -32,10 +33,11 @@ classdef Hopfield < handle
     methods
         % Initializes a Hopfield network of a given size
         function obj = Hopfield(networkSize)
-            obj.networkSize    = networkSize;
-            obj.synapseWeights = zeros(obj.networkSize);
-            obj.unitThreshold  = zeros(1,obj.networkSize);
-            obj.currentState   = zeros(1,obj.networkSize);
+            obj.networkSize      = networkSize;
+            obj.weightMatrix     = zeros(obj.networkSize);
+            obj.unitThreshold    = zeros(1,obj.networkSize);
+            obj.currentState     = zeros(1,obj.networkSize);
+            obj.connectionMatrix = Connections.GenerateFull(obj.networkSize,0);
         end
         
         % Generates a new pattern
@@ -113,19 +115,12 @@ classdef Hopfield < handle
                 nextPattern = nextPattern-mean(nextPattern);
             end
             
-            obj.synapseWeights = obj.gamma.*obj.synapseWeights + C.*(nextPattern*nextPattern');
+            obj.weightMatrix = obj.gamma.*obj.weightMatrix + C.*obj.connectionMatrix.*(nextPattern*nextPattern');
             
             % Check if clipping needs to be applied
             if strcmp(obj.clipMode,'clip')
-                obj.synapseWeights(obj.synapseWeights(:) < -obj.clipValue) = -obj.clipValue;
-                obj.synapseWeights(obj.synapseWeights(:) > obj.clipValue) = obj.clipValue;
-            end
-            
-            % Check if self connections need to be removed
-            if strcmp(obj.selfConnections,'noself')
-                for i = 1:size(obj.synapseWeights)
-                    obj.synapseWeights(i,i) = 0;
-                end
+                obj.weightMatrix(obj.weightMatrix(:) < -obj.clipValue) = -obj.clipValue;
+                obj.weightMatrix(obj.weightMatrix(:) > obj.clipValue) = obj.clipValue;
             end
             
             % Store the pattern
@@ -141,58 +136,70 @@ classdef Hopfield < handle
             end
         end
         
-        % Add a pattern to the matrix using the delta learning rule
-        function outputError = PerformDeltaUpdate(obj, nextPattern, etha)
-            if obj.networkSize ~= length(nextPattern)
+        % Performs a single adjustment to the weight matrix using the
+        % perceptron learning rule for the given input pattern. Returns the
+        % number of units that were updated.
+        function trainingError = PerformDeltaUpdate(obj, inputPattern, learningRate, learningThreshold)
+            if nargin <4
+                learningThreshold = 0;
+            end
+            if nargin < 3
+                learningRate = 1/length(inputPattern);
+            end
+            
+            if obj.networkSize ~= length(inputPattern)
                 error('Pattern size not consistent with current weight matrix');
             end
             
-            currentOutput = obj.Iterate(nextPattern);
-            outputError = nextPattern(:) - currentOutput(:);           
-            deltaW = outputError*nextPattern(:)' + nextPattern(:)*outputError(:)';
-            obj.synapseWeights = obj.synapseWeights + etha.*deltaW;
-            
-            if strcmp(obj.selfConnections,'noself')
-                obj.synapseWeights(1:(obj.networkSize+1):(obj.networkSize*obj.networkSize)) = 0;
+            % Make sure that we have a column vector
+            if size(inputPattern,1) == 1 && size(inputPattern,2) > 1
+                inputPattern  = inputPattern';
             end
+            
+            % Adjust units that fall below the learning threshold
+            unitInput = obj.weightMatrix*inputPattern;
+            needsUpdating = unitInput.*inputPattern <= learningThreshold;
+            adjustUnit = needsUpdating.*inputPattern;
+            obj.weightMatrix = obj.weightMatrix + learningRate.*obj.connectionMatrix.*(adjustUnit*inputPattern');
+                  
+            if obj.symmetricDelta == 1
+                obj.weightMatrix = triu(obj.weightMatrix) + triu(obj.weightMatrix,1)';
+            end
+            
+            trainingError = sum(needsUpdating);
         end
         
         % Add patterns from the input matrix using the delta learning rule
-        function LearnDeltaPatterns(obj, patternMatrix, etha, fixedIterationCount)
-            if nargin == 4
-                useFixedIterations = 1;
-            else
-                useFixedIterations = 0;
+        function trainingError = LearnDeltaPatterns(obj, patternMatrix, learningRate, learningThreshold)
+            if nargin <4
+                learningThreshold = 0;
             end
-            
+            if nargin < 3
+                learningRate = 1/length(inputPattern);
+            end
             obj.storedPatterns = patternMatrix;
             
-            zeroError = 0;
             currentIteration = 1;
             nPatterns = size(patternMatrix,1);
             
-            while zeroError == 0
-                % Present each pattern in turn to the network and adjust
-                % the weights
+            patternsLearned = 0;
+            trainingError = zeros(1,obj.maxDeltaIterations);
+            while patternsLearned == 0
+                % Iterate over each pattern
                 err = zeros(1,nPatterns);
                 for trainingIndex = 1:nPatterns
-                    err(trainingIndex) = mean(abs(obj.PerformDeltaUpdate(patternMatrix(trainingIndex,:),etha)));
+                    err(trainingIndex) = obj.PerformDeltaUpdate(patternMatrix(trainingIndex,:),learningRate, learningThreshold);
                 end
                 
-                % Check if we should proceed with the next presentation of
-                % all patterns
-                currentIteration = currentIteration + 1;
-                if useFixedIterations == 1
-                    if currentIteration > fixedIterationCount
-                        return;
-                    end
+                % Check if training is complete
+                trainingError(currentIteration) = sum(err)/nPatterns;
+                if trainingError(currentIteration) == 0
+                    patternsLearned = 1;
                 else
-                    if currentIteration > (obj.maxDeltaIterationMultiplier*nPatterns)
-                        error('Maximum training iterations for delta learning rule exceeded!');
-                    end
-                    
-                    if sum(err) == 0
-                        zeroError = 1;
+                    currentIteration = currentIteration + 1;
+                    if currentIteration > (obj.maxDeltaIterations)
+                        display('Warning! Maximum training iterations for delta learning rule exceeded!');
+                        break;
                     end
                 end
             end
@@ -202,16 +209,23 @@ classdef Hopfield < handle
         % Fetch and manipulate the weight matrix manually
         function ResetWeightMatrix(obj)
             obj.storedPatterns = [];
-            obj.synapseWeights = zeros(obj.networkSize);
+            obj.weightMatrix = zeros(obj.networkSize);
         end   
         function result = GetWeightMatrix(obj)
-            result = obj.synapseWeights;
+            result = obj.weightMatrix;
         end
         function SetWeightMatrix(obj, weightMatrix)
-            obj.synapseWeights = weightMatrix;
+            obj.weightMatrix = weightMatrix;
         end
         
         % Configure network parameters
+        function SetConnectionMatrix(obj, cm)
+            if size(cm) ~= size(obj.weightMatrix)
+                error('Connection matrix dimensions do not match the weight matrix dimensions.');
+            end
+            
+            obj.connectionMatrix = cm;
+        end
         function SetUnitModel(obj,unitModel)
             if unitModel == 'S'
                 obj.unitModel = 'S';
@@ -261,12 +275,6 @@ classdef Hopfield < handle
         function DisableWeightClipping(obj)
             obj.clipMode = 'noclip';
         end
-        function EnableSelfConnections(obj)
-            obj.selfConnections = 'self';
-        end
-        function DisableSelfConnections(obj)
-            obj.selfConnections = 'noself';
-        end
         function UseDeterministicDynamics(obj)
             obj.updateDynamics = 'deterministic';
         end
@@ -281,6 +289,7 @@ classdef Hopfield < handle
             obj.inputNoiseMean = mu;
             obj.inputNoiseSd   = sigma;
         end
+        
         % Clamp the state of the model to a specific set of values
         function ClampState(obj,newState)
             if length(newState) ~= obj.networkSize
@@ -302,7 +311,7 @@ classdef Hopfield < handle
             
             switch method
                 case 'sync'
-                    inputPotential = obj.synapseWeights*obj.currentState';
+                    inputPotential = obj.weightMatrix*obj.currentState';
                     inputPotential = inputPotential + obj.inputNoiseMean + obj.inputNoiseSd.*randn(size(inputPotential));
                     if strcmp(obj.updateDynamics,'deterministic') == 1
                         obj.currentState( (inputPotential) > threshold) = obj.unitValues(2);
@@ -314,7 +323,7 @@ classdef Hopfield < handle
                         obj.currentState(g <= r) = obj.unitValues(1);
                     end
                 case 'async'
-                    updateOrder = randperm(size(obj.synapseWeights,1));
+                    updateOrder = randperm(size(obj.weightMatrix,1));
                     for unitIdx = 1:length(updateOrder)
                         obj.UpdateUnit(updateOrder(unitIdx));
                     end
@@ -330,7 +339,7 @@ classdef Hopfield < handle
             end
             
             inputNoise = obj.inputNoiseMean + obj.inputNoiseSd*rand();
-            inputPotential = obj.synapseWeights(unitIndex,:)*obj.currentState' + inputNoise; 
+            inputPotential = obj.weightMatrix(unitIndex,:)*obj.currentState' + inputNoise; 
             if strcmp(obj.updateDynamics,'deterministic') == 1
                 if ( (inputPotential) > obj.unitThreshold(unitIndex))
                     obj.currentState(unitIndex) = obj.unitValues(2);
@@ -381,7 +390,7 @@ classdef Hopfield < handle
                 networkState = networkState';
             end
             
-            energy = -sum(sum(obj.synapseWeights.*(networkState*networkState')));
+            energy = -sum(sum(obj.weightMatrix.*(networkState*networkState')));
         end
         
         % Returns the energy associated with each unit in the following
@@ -393,7 +402,7 @@ classdef Hopfield < handle
                 networkState = networkState';
             end
             
-            netInput = obj.synapseWeights*networkState;
+            netInput = obj.weightMatrix*networkState;
             unitEnergy = netInput.*networkState;
         end
         
@@ -413,9 +422,9 @@ classdef Hopfield < handle
             end
             
             deltaW = -epsilon.*(stableState*stableState');
-            obj.synapseWeights = obj.synapseWeights + deltaW;
-            for i = 1:size(obj.synapseWeights,1)
-                obj.synapseWeights(i,i) = 0;
+            obj.weightMatrix = obj.weightMatrix + deltaW;
+            for i = 1:size(obj.weightMatrix,1)
+                obj.weightMatrix(i,i) = 0;
             end
         end
         
@@ -471,14 +480,14 @@ classdef Hopfield < handle
             
             nPatterns = size(obj.storedPatterns,1);
                        
-            potentialValues = zeros(1,size(obj.synapseWeights,1)*nPatterns);
-            activityValues = zeros(1,size(obj.synapseWeights,1)*nPatterns);
+            potentialValues = zeros(1,size(obj.weightMatrix,1)*nPatterns);
+            activityValues = zeros(1,size(obj.weightMatrix,1)*nPatterns);
             
             for patternIndex = 1:nPatterns
                 nextPattern = obj.storedPatterns(patternIndex,:);
-                inputPotential = obj.synapseWeights*nextPattern';                
-                potentialValues( (1:size(obj.synapseWeights,1))+((patternIndex-1) * size(obj.synapseWeights,1))) = inputPotential;
-                activityValues((1:size(obj.synapseWeights,1))+((patternIndex-1) * size(obj.synapseWeights,1))) = nextPattern;
+                inputPotential = obj.weightMatrix*nextPattern';                
+                potentialValues( (1:size(obj.weightMatrix,1))+((patternIndex-1) * size(obj.weightMatrix,1))) = inputPotential;
+                activityValues((1:size(obj.weightMatrix,1))+((patternIndex-1) * size(obj.weightMatrix,1))) = nextPattern;
             end
             
             minBin = min(potentialValues);
@@ -680,6 +689,40 @@ classdef Hopfield < handle
                         isSpuriousState(j) = 0;
                         oldPatternIndex(j) = i;
                         break;
+                    end
+                end
+            end
+        end
+        
+        % Estimates the basin of attraction for each of the patterns
+        % Keeps a portion of the pattern fixed and randomizes the other
+        % part. If all samples converge we say this is the radius 
+        % Returns how many units need to be the same before all samples
+        % converge to the original pattern
+        function currentDistance = HammingRadius(hopfieldModel, pattern, nSamples)
+            currentDistance = length(pattern);
+            radiusFound = 0;
+            
+            while radiusFound == 0
+                
+                e = zeros(1,nSamples);
+                for i = 1:nSamples
+                    distortSample = hopfieldModel.DistortPattern(pattern, currentDistance/length(pattern));
+                    output = hopfieldModel.Converge(distortSample);
+                    e(i) = sum(output ~=pattern);
+                    
+                    if e(i) > 0
+                        break
+                    end
+                end
+                
+                if sum(e) == 0
+                    radiusFound = 1;
+                else
+                    currentDistance = currentDistance - 1;
+                    if currentDistance == 0
+                        display('Warning! Input pattern is not a stable state of the network');
+                        radiusFound = 1;
                     end
                 end
             end
