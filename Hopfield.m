@@ -203,8 +203,48 @@ classdef Hopfield < handle
                     end
                 end
             end
+        end
+        
+        function PerformStorkeyUpdate(obj, pattern, C)
+            nUnits = length(pattern);
+            if nargin == 2
+                C = 1/nUnits;
+            end
+            
+            if size(pattern,1) == 1
+                pattern = pattern';
+            end
+            
+            localField = obj.weightMatrix*pattern;
+            % Compute Hebbian term
+            hebTerm = C.*(pattern*pattern');
+            
+            % Compuate middle term 
+            pe = repmat(pattern,1,nUnits);
+            lfe = repmat(localField',nUnits,1);
+            st = obj.weightMatrix.*pe;
+            midTerm = C.*(pe.*(lfe-st));
+            
+            % Compute the rightmost term
+            pe = repmat(pattern',nUnits,1);
+            lfe = repmat(localField,1,nUnits);
+            st = obj.weightMatrix.*pe;
+            rightTerm = C.*(pe.*(lfe-st));
             
             
+            obj.weightMatrix = obj.weightMatrix + hebTerm - midTerm - rightTerm;
+            obj.weightMatrix = obj.weightMatrix.*obj.connectionMatrix;
+        end
+        
+        function AddStorkeyPatterns(obj, patternMatrix,C)
+            nUnits = size(patternMatrix,2);
+            if nargin == 2
+                C = 1/nUnits;
+            end
+            
+            for i = 1:size(patternMatrix,2)
+                obj.PerformStorkeyUpdate(patternMatrix(i,:),C);
+            end
         end
         % Fetch and manipulate the weight matrix manually
         function ResetWeightMatrix(obj)
