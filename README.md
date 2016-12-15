@@ -1,10 +1,10 @@
 # Hopfield
 
-The Hopfield network is a classical recurrent artificial neural network that is able to store different patterns. This model has been analysed extensively, and extensions to the model have been developed that allow it to cope with low-activity patterns, improve its memory capacity, capture the central tendency of a distribution of patterns and forgetting of old patterns in favor of recollecting new patterns. Additionally, it has been used as a model for human explicit memory and has been used as a basis to model the deterioration that occurs in human hippocampus in Alzheimer's disease.
+The Hopfield network is one of the classical examples of a recurrent neural network. An important property of this network is that each unit is connected to every other unit in the network. This turns the network into a dynamical system in which the network will settle into attractor states that (hopefully) correspond to stored patterns in the network. Because of its similarities with certain magnetic systems, the model has receieved a considerable amount of attention from physicists. Their main approach is the use of techniques from statistical mechanics to formally analyse properties of the model such as the storage capacity. The model also received attention from psychologists and neuroscientists because it has characteristics that resemble aspects of human memory. A common connection that is made is the link between sustained neuronal activity in prefrontal cortex during a delayed match-to-sample task and the ability of the model to converge and remain in a state that corresponds to a stored exemplar. The model has aslo been adjusted so that it mimicks the recall performances that are obtained in list-learning experiments. Although the model does lack a lot of biological plausibility, recent research is beginning to incorporate more biological properties into these model. These included adding short-term depresssion and facilitation mechanisms, as well as replacing the original [-1, 1] units with units that are described by differential equations which mimick voltage fluctuations of biological neurons.
 
-In this repository I will collect code for simulations that relate to several research papers on Hopfield neural networks. To this end, I have developed a general purpose Hopfield model class in Matlab that easily allows to change different parameters of the model and I have used this class to replicate the results of several papers. My hope is that by collecting these different modifications and extensions can provide a starting point for future research and simulation studies.
+To better understand the Hopfield model I have read several papers that investigated this model, and to better understand these papers I have tried to replicate the simulations that were performed. To make my life a little bit easier I am developing corresponding Matlab functions that help with these simulations. In the long run, my goal is to incorporate findings from different studies into a single Hopfield model that can easily be used to perform new simulations. 
 
-# How to use the code
+# How to use the model
 ```matlab
 % Create a new Hopfield network with 50 units
 myHopfield = Hopfield(50);
@@ -19,20 +19,19 @@ myHopfield.SetUpdateMode(updateMode); % Update mode can be 'sync' or 'async'
 pattern = myHopfield.GeneratePattern(0.5)
 
 % Add a pattern to the model
-myHopfield.AddPattern(pattern);
+myHopfield.StorePattern(pattern);
 
 % Create a distorted version of a pattern
 distortedPattern = myHopfield.DistortPattern(pattern);
 
-% Perform a single update iteration. In 'async' mode, each unit is updated
-% sequentially (in random order). In 'sync' mode, all units are updated simultaneously
-networkState = myHopfield.Iterate(distortedPattern)
+% Perform a single state update
+networkState = myHopfield.UpdateState(distortedPattern)
 
 % Network weights can be obtained with
 weights = hopfield.GetWeightMatrix()
 
 % Network can be reset using
-myHopfield.ResetWeights()
+myHopfield.ResetWeightMatrix()
 ```
 
 # Example result
@@ -40,12 +39,3 @@ The following result was obtained by running the Hopfield_demo.m script. Pattern
 
 ![Hopfield demo](/hopfield_demo.jpg?raw=true)
 
-
-# Papers in progress:
-- Hopfield, J. J., Feinstein, D. I., & Palmer, R. G. (1983). 'Unlearning' has a stabilizing effect in collective memories. Nature
-
-- Burgess, N., & Shapiro, J. (1991). Neural network models of list learning. Network, 2, 399-422.
-
-- Zochowski, M., Lewenstein, M., & Nowak, A. (1993). A memory which tentatively forgets. Journal of Physics A, 2099-2112.
-
-- Morita, M. (1993). Associative memory with nonmonotone dynamics. Neural Networks, 6, 115-126.
