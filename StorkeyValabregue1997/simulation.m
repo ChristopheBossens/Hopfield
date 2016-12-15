@@ -6,7 +6,7 @@ p = h.GeneratePatternMatrix(nPatterns);
 
 hebNet = Hopfield(nUnits);
 storkeyNet = Hopfield(nUnits);
-
+storkeyNet.SetLearningRule('Storkey');
 %% Performance metric 1:
 % How many patterns can be stored as stable states
 alpha = [0.1:0.1:0.5];
@@ -14,24 +14,27 @@ alpha = [0.1:0.1:0.5];
 overlapResults = zeros(2,nPatterns);
 
 for tIndex = 1:nPatterns
-    hebNet.AddPattern(p(tIndex,:));
-    storkeyNet.PerformStorkeyUpdate(p(tIndex,:));
+    hebNet.StorePattern(p(tIndex,:));
+    storkeyNet.StorePattern(p(tIndex,:));
     
     for i = 1:tIndex
         currentPattern = p(i,:);
         
         % Test the heb model
-        nextState = hebNet.Iterate(currentPattern);
+        nextState = hebNet.UpdateState(currentPattern);
         overlapResults(1,tIndex) = overlapResults(1,tIndex) + (nextState*currentPattern')/(nUnits*tIndex);
         
         % Test the Storkey model
-        nextState = storkeyNet.Iterate(currentPattern);
+        nextState = storkeyNet.UpdateState(currentPattern);
         overlapResults(2,tIndex) = overlapResults(2,tIndex) + (nextState*currentPattern')/(nUnits*tIndex);
     end
 end
 
-plot(overlapResults')
+plot((1:nPatterns)/nUnits,overlapResults,'LineWidth',2)
 legend('Hebb rule','Storkey rule')
+title('Network capacity')
+xlabel('\alpha')
+ylabel('Overlap')
 %% Performance metric 2:
 % Mean attractor radius for different network loads
 nPatterns = 8;
@@ -42,8 +45,8 @@ storkeyNet.ResetWeightMatrix();
 radiusData = zeros(2,nPatterns);
 
 for tIndex = 1:nPatterns
-    hebNet.AddPattern(pm(tIndex,:));
-    storkeyNet.PerformStorkeyUpdate(pm(tIndex,:));
+    hebNet.StorePattern(pm(tIndex,:));
+    storkeyNet.StorePattern(pm(tIndex,:));
     
     for i = 1:tIndex
         h1 = Hopfield.HammingRadius(hebNet,pm(i,:),50);
@@ -54,7 +57,7 @@ for tIndex = 1:nPatterns
     end
 end
 
-plot(radiusData','LineWidth',2)
+plot((1:nPatterns)/nUnits,radiusData','LineWidth',2)
 legend('Hebb rule','Storkey rule')
 title('Attractor radius')
 xlabel('Network load')
@@ -70,8 +73,8 @@ storkeyNet.ResetWeightMatrix();
 
 ec = zeros(2,length(p),nPatterns);
 for tIndex = 1:nPatterns
-    hebNet.AddPattern(pm(tIndex,:));
-    storkeyNet.PerformStorkeyUpdate(pm(tIndex,:));
+    hebNet.StorePattern(pm(tIndex,:));
+    storkeyNet.StorePattern(pm(tIndex,:));
     
     for i = 1:tIndex
         for pIndex = 1:length(p)
@@ -88,16 +91,16 @@ for tIndex = 1:nPatterns
 end
 
 subplot(1,2,1)
-plot(squeeze(ec(1,:,:))')
-set(gca,'YLim',[0.0 1])
+plot((1:nPatterns)./nUnits,squeeze(ec(1,:,:))')
+set(gca,'YLim',[0.0 1],'XLim',[0,0.3])
 axis square
-title('Hebb rule')
+title('Hebb noise sensitivity'),xlabel('\alpha'),ylabel('Overlap')
 subplot(1,2,2)
-plot(squeeze(ec(2,:,:))')
-set(gca,'YLim',[0.0 1])
+plot((1:nPatterns)./nUnits,squeeze(ec(2,:,:))')
+set(gca,'YLim',[0.0 1],'XLim',[0,0.3])
 axis square
-title('Storkey rule')
-
+title('Storkey noise sensitivity'),xlabel('\alpha'),ylabel('Overlap')
+legend('0.1','0.2','0.3')
 %% Performance metric 4:
 % Stable states when patterns are biased
 nUnits      = 100;
@@ -112,15 +115,15 @@ for bIndex = 1:length(patternBias)
    storkeyNet.ResetWeightMatrix();
    
    for pIndex = 1:nPatterns;
-       hebNet.AddPattern(pm(pIndex,:));
-       storkeyNet.PerformStorkeyUpdate(pm(pIndex,:));
+       hebNet.StorePattern(pm(pIndex,:));
+       storkeyNet.StorePattern(pm(pIndex,:));
    end
    
    for tIndex = 1:nPatterns
        inputPattern = pm(tIndex,:);
 
-       o1 = hebNet.Iterate(inputPattern);
-       o2 = storkeyNet.Iterate(inputPattern);
+       o1 = hebNet.UpdateState(inputPattern);
+       o2 = storkeyNet.UpdateState(inputPattern);
 
        if sum(o1 ~= inputPattern) == 0
            recallMatrix(1,bIndex) = recallMatrix(1,bIndex)+ (1/nPatterns);
@@ -137,5 +140,5 @@ plot(repmat(patternBias,2,1)',recallMatrix','LineWidth',2)
 legend('Hebb rule','Storkey rule')
 xlabel('Pattern bias')
 ylabel('Proportion stable')
-title('Storage of biased patterns')
+title('Storage of 10 biased patterns')
 set(gca,'YLim',[0,1.3])

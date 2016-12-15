@@ -2,22 +2,24 @@ clear
 % Define simulation parameters and configure hopfield network
 networkSize = 100;
 nPatterns = 40;
-gamma = 1.0;
-epsilon = 0.2;
 noiseLevel = 0.15;
 nSimulations = 10;
 
 hopfield = Hopfield(networkSize);
-hopfield.SetGamma(gamma);
 hopfield.EnableWeightClipping(1);
 %% Run simulations for obtaining weight distributions for figure 3
+% parameters used in the paper:
+gamma = 1.05;
+epsilon = 0.1;
+hopfield.SetGamma(gamma);
+
 bins = -1:0.2:1;
 weightDistribution = zeros(nPatterns,length(bins));
 for simulationIndex = 1:nSimulations
     patternMatrix = hopfield.GeneratePatternMatrix(nPatterns,0.5);
-    hopfield.ResetWeights();
+    hopfield.ResetWeightMatrix();
     for patternIndex = 1:nPatterns  
-       hopfield.AddPattern(patternMatrix(patternIndex,:),epsilon);
+       hopfield.StorePattern(patternMatrix(patternIndex,:),epsilon);
        
        weightMatrix = hopfield.GetWeightMatrix();
        dist = hist(weightMatrix(:),bins);
@@ -48,12 +50,13 @@ switch selectedFigure
 end
 
 overlapMatrix = zeros(nPatterns,nPatterns);
+hopfield.SetUpdateMode('sync');
 for simulationIndex = 1:nSimulations
-    hopfield.ResetWeights();
+    hopfield.ResetWeightMatrix();
     hopfield.SetGamma(gamma);
     patternMatrix = hopfield.GeneratePatternMatrix(nPatterns,0.5);
     for patternIndex = 1:nPatterns
-        hopfield.AddPattern(patternMatrix(patternIndex,:),epsilon);
+        hopfield.StorePattern(patternMatrix(patternIndex,:),epsilon);
         for testIndex = 1:patternIndex
             originalPattern = patternMatrix(testIndex,:);
             testPattern = hopfield.DistortPattern(originalPattern,noiseLevel);
@@ -123,12 +126,12 @@ for simulationIndex = 1:nSimulations
         end
     end
 
-    rpiHopfield.ResetWeights();
-    controlHopfield.ResetWeights();
+    rpiHopfield.ResetWeightMatrix();
+    controlHopfield.ResetWeightMatrix();
     for i = 1:nPatterns
         % Add patterns
-        rpiHopfield.AddPattern(rpiPatternMatrix(i,:),epsilon);
-        controlHopfield.AddPattern(controlPatternMatrix(i,:),epsilon);
+        rpiHopfield.StorePattern(rpiPatternMatrix(i,:),epsilon);
+        controlHopfield.StorePattern(controlPatternMatrix(i,:),epsilon);
         
         % Test the network every 3 patterns (i.e. a single trial)
         if mod(i,nMembersPerTrial) == 0

@@ -10,14 +10,14 @@ deltaTrainingEpochs = 100;
 % 1: Standard Hebbian learning
 % 2: Delta learning
 % 3: Delta learning with noise
-simulationType = 3;
+simulationType = 1;
 
 hopfield = Hopfield(networkSize);
 patternMatrix = hopfield.GeneratePatternMatrix(nPatterns,0.5);
 
 switch simulationType
     case 1
-        hopfield.AddPatternMatrix(patternMatrix,1);
+        hopfield.StorePatternMatrix(patternMatrix,1);
     case 2
         hopfield.LearnDeltaPatterns(patternMatrix,0.5,deltaTrainingEpochs);
     case 3
@@ -107,7 +107,7 @@ for simulationIndex = 1:nSimulations
             hopfield.ResetWeightMatrix();
             switch networkType
                 case 1
-                    hopfield.AddPatternMatrix(patternMatrix(1:patternIndex,:),1);
+                    hopfield.StorePatternMatrix(patternMatrix(1:patternIndex,:),1);
                 case 2
                     hopfield.LearnDeltaPatterns(patternMatrix(1:patternIndex,:),0.5,deltaTrainingEpochs);
                 case 3

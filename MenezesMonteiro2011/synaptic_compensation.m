@@ -6,7 +6,7 @@ sparseness = 0.1;
 T = sparseness*(1-sparseness)*(1-2*sparseness)/2;
 nPatterns = round(alpha*networkSize);
 
-dValues = 0:0.01:.50;
+dValues = 0:0.01:.90;
 nD = length(dValues);
 
 h = Hopfield(networkSize);
@@ -16,13 +16,13 @@ strategies = {'synapse','random','neuron'};
 nSimulations = 5;
 recallData = zeros(nSimulations,3,8,nD);
 compensationStrategies = [1 2 3 8];
-
+h.SetUpdateMode('sync');
 % Start the simulation loop
 for simulationIndex = 1:nSimulations
     % For each simulation, generate a different pattern matrix
     h.ResetWeightMatrix();
     patternMatrix = h.GeneratePatternMatrix(nPatterns,sparseness);
-    h.AddPatternMatrix(patternMatrix-sparseness,1/networkSize);
+    h.StorePatternMatrix(patternMatrix-sparseness,1/networkSize);
     or = h.GetWeightMatrix();
     
     % Test for different deletion strategies
@@ -112,11 +112,15 @@ recallData = recallData./nPatterns;
 %%
 clf,
 M = squeeze(mean(recallData));
-M = squeeze((recallData));
+% M = squeeze((recallData));
 for i = 1:3
     subplot(1,3,i), hold on
-    plot(dValues,squeeze(M(i,1,:)),'k','LineWidth',2)
     plot(dValues,squeeze(M(i,2,:)),'--k','LineWidth',2)
     plot(dValues,squeeze(M(i,3,:)),'g','LineWidth',2)
     plot(dValues,squeeze(M(i,8,:)),'--g','LineWidth',2)
+    axis square
+    title(strategies(i))
+    xlabel('Deletion')
+    ylabel('Performance')
 end
+legend('Pruned','Compensated #1','Compensated #2')

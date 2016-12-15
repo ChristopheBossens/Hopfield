@@ -24,7 +24,7 @@ exemplarOverlapVector = zeros(1,nExemplars);
 
 hopfield.ResetWeightMatrix();
 for exemplarIndex = 1:nExemplars
-    hopfield.AddPattern(exemplarMatrix(exemplarIndex,:),1/networkSize);
+    hopfield.StorePattern(exemplarMatrix(exemplarIndex,:),1/networkSize);
     
     % Test if the previously stored patterns are stable states, calculate
     % the overlap with the input pattern and with the prototype pattern
@@ -32,19 +32,20 @@ for exemplarIndex = 1:nExemplars
         input = exemplarMatrix(testPatternIndex,:);
         inputDistorted = hopfield.DistortPattern(input, 0.2);
         output = hopfield.Converge(inputDistorted);
-        exemplarOverlapVector(exemplarIndex) = exemplarOverlapVector(exemplarIndex) + sum((output==input))/networkSize;
+        exemplarOverlapVector(exemplarIndex) = exemplarOverlapVector(exemplarIndex) + (input*output')/networkSize;
     end
     exemplarOverlapVector(exemplarIndex) = exemplarOverlapVector(exemplarIndex)./exemplarIndex;
     
     % Test stability of concept prototype
     [output, it] = hopfield.Converge(conceptPattern);
-    conceptOverlapVector(exemplarIndex) = sum(conceptPattern==output)/networkSize;
+    conceptOverlapVector(exemplarIndex) = (conceptPattern*output')/networkSize;
 end
 %% Plot the data
 clf,hold on
 plot(1:nExemplars,conceptOverlapVector,'--g','LineWidth',2),
 plot(1:nExemplars,exemplarOverlapVector,'--r','LineWidth',2)
 title('Concept vs exemplar overlap'),xlabel('# Exemplars added'),ylabel('Prototype pattern overlap')
+legend('Concept overlap','Exemplar overlap')
 colormap jet
 
 %% Same procedure, but with two different concept patterns
@@ -63,28 +64,28 @@ conceptOverlapVector = zeros(2,nExemplars);
 exemplarOverlapVector = zeros(2,nExemplars);
 hopfield.ResetWeightMatrix();
 for exemplarIndex = 1:nExemplars
-    hopfield.AddPattern(exemplarMatrixA(exemplarIndex,:),1);
-    hopfield.AddPattern(exemplarMatrixB(exemplarIndex,:),1);
+    hopfield.StorePattern(exemplarMatrixA(exemplarIndex,:),1);
+    hopfield.StorePattern(exemplarMatrixB(exemplarIndex,:),1);
     
     for testPatternIndex = 1:exemplarIndex
         % A prototype
         input = exemplarMatrixA(testPatternIndex,:);
         output = hopfield.Converge(hopfield.DistortPattern(input,0.2));
-        exemplarOverlapVector(1,exemplarIndex) = exemplarOverlapVector(1,exemplarIndex) + sum(input == output)/networkSize;
+        exemplarOverlapVector(1,exemplarIndex) = exemplarOverlapVector(1,exemplarIndex) + (input*output')/networkSize;
         
         % B prototype
         input = exemplarMatrixB(testPatternIndex,:);
         output = hopfield.Converge(hopfield.DistortPattern(input,0.2));
-        exemplarOverlapVector(2,exemplarIndex) = exemplarOverlapVector(2,exemplarIndex) + sum(input == output)/networkSize;
+        exemplarOverlapVector(2,exemplarIndex) = exemplarOverlapVector(2,exemplarIndex) + (input*output')/networkSize;
     end
     exemplarOverlapVector(:,exemplarIndex) = exemplarOverlapVector(:,exemplarIndex)/exemplarIndex;
     
     % Test stability of concept prototype
     output = hopfield.Converge(hopfield.DistortPattern(conceptPatternA,0.1));
-    conceptOverlapVector(1,exemplarIndex) = sum(output==conceptPatternA)/networkSize;
+    conceptOverlapVector(1,exemplarIndex) = (conceptPatternA*output')/networkSize;
     
     output = hopfield.Converge(hopfield.DistortPattern(conceptPatternB,0.1));
-    conceptOverlapVector(2,exemplarIndex) = sum(output==conceptPatternB)/networkSize;
+    conceptOverlapVector(2,exemplarIndex) = (conceptPatternB*output')/networkSize;
 end
 %% Plot the results
 clf,

@@ -1,19 +1,10 @@
 %% Construct a default network and generate a pattern matrix
 clc;clear
-
-
 nPatterns = 32;
 networkSize = 64;
-
 hopfield = Hopfield(networkSize);
-patternActivity = 0.5;
 
-patternMatrix = zeros(nPatterns,networkSize);
-for patternIdx = 1:nPatterns
-    patternMatrix(patternIdx,:) = hopfield.GeneratePattern(patternActivity);
-end
-
-
+patternMatrix = hopfield.GeneratePatternMatrix(nPatterns);
 %% Probe the capacity of the network.
 % We add new patterns and after the addition of each new pattern we test if
 % the network can still recall previous patterns. We keep track of how many
@@ -21,7 +12,6 @@ end
 % pattern that was used to probe the network
 
 % Initialize data storage matrices
-hopfield.ResetWeights();
 iterationMatrix = zeros(nPatterns);
 overlapMatrix = zeros(nPatterns);
 weightValues = zeros(3,nPatterns);
@@ -30,39 +20,30 @@ proportionRecalled = zeros(1,nPatterns);
 % Set the simulation patterns
 recallCriterion = 0.9;
 nRepetitions = 5;
-noiseLevel = .0;
+noiseLevel = .1;
 
+hopfield.ResetWeightMatrix();
 for trainingPatternIdx = 1:nPatterns
     % Add pattern and inspect statistics of weight matrix
-   hopfield.AddPattern(patternMatrix(trainingPatternIdx,:));
+   hopfield.StorePattern(patternMatrix(trainingPatternIdx,:));
    
    currentWeights = hopfield.GetWeightMatrix();
    weightValues(1,trainingPatternIdx) = max(currentWeights(:));
    weightValues(2,trainingPatternIdx) = mean(currentWeights(:));
    weightValues(3,trainingPatternIdx) = min(currentWeights(:));
     
-   % Test recollection on all previously learned patterns
+   % Previous patterns are presented multiple times
    iterationVector = zeros(1,nRepetitions);
    overlapVector =  zeros(1,nRepetitions);
-   
    for testPatternIdx = 1:trainingPatternIdx
        for repetitionIdx = 1:nRepetitions
-           netInput = hopfield.DistortPattern(patternMatrix(testPatternIdx,:),noiseLevel);
+           inputPattern = patternMatrix(testPatternIdx,:);
+           initialState = hopfield.DistortPattern(inputPattern,noiseLevel);
            
-           converged = -1;
-           iterations = 1;
-           while converged == -1
-               netOutput = hopfield.Iterate(netInput);
-
-               if (sum(netInput-netOutput) == 0)
-                   converged = 1;
-               else
-                   iterations = iterations + 1;
-                   netInput = netOutput;
-               end
-           end
-           iterationVector(repetitionIdx) = iterations;
-           overlapVector(repetitionIdx) = (netOutput*patternMatrix(testPatternIdx,:)')/networkSize;
+           [finalState,it] = hopfield.Converge(initialState);
+           
+           iterationVector(repetitionIdx) = it;
+           overlapVector(repetitionIdx) = (finalState*inputPattern')/networkSize;
        end
        
        if mean(overlapVector) > recallCriterion

@@ -17,6 +17,7 @@ recallPerformance = zeros(nNetworkSizes,nClipValues);
 for repetitionIndex = 1:nRepetitions
     for networkSizeIndex = 1:nNetworkSizes
         hopfield = Hopfield(networkSizes(networkSizeIndex));
+        hopfield.SetUpdateMode('sync');
         patternMatrix = hopfield.GeneratePatternMatrix(nPatterns);
         for clipIndex = 1:nClipValues
             display(['Testing repetition ' num2str(repetitionIndex) '/' num2str(nRepetitions)])
@@ -24,7 +25,7 @@ for repetitionIndex = 1:nRepetitions
             display(['Clip value: ' num2str(clipValues(clipIndex))])
             hopfield.ResetWeightMatrix();
             hopfield.EnableWeightClipping(clipValues(clipIndex));
-            hopfield.AddPatternMatrix(patternMatrix,sqrt(1/networkSizes(networkSizeIndex)));
+            hopfield.StorePatternMatrix(patternMatrix,sqrt(1/networkSizes(networkSizeIndex)));
 
            % Test recollection on all previously learned patterns
            for testPatternIdx = 1:nPatterns
@@ -49,3 +50,7 @@ clf, hold on
 for i = 1:nNetworkSizes
     plot(clipValues,recallPerformance(i,:),symbols{i})
 end
+xlabel('Clip value')
+ylabel('Proportion recalled')
+legend('100','200','300')
+title('Optimal clip value')

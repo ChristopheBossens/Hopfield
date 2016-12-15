@@ -9,15 +9,20 @@ classdef Hopfield < handle
         currentState     = [];
         connectionMatrix = [];
         
+        % Parameters for delta learning
         symmetricDelta = 0;
+        deltaLearningRate = 1;
+        deltaLearningThreshold = 0;
+        
         unitModel = 'S';
         clipMode  = 'noclip';
         clipValue = 1;
         updateMode = 'async';
         activityNormalization = 'on';
         updateDynamics = 'deterministic';
-        beta = 1.0;
+        learningRule = 'Hebb'; % Can be 'Hebb', 'Storkey', or 'Delta'
         
+        beta = 1.0;
         gamma = 1.0;
         networkSize = 0;
         unitThreshold = 0;
@@ -35,13 +40,13 @@ classdef Hopfield < handle
         function obj = Hopfield(networkSize)
             obj.networkSize      = networkSize;
             obj.weightMatrix     = zeros(obj.networkSize);
-            obj.unitThreshold    = zeros(1,obj.networkSize);
-            obj.currentState     = zeros(1,obj.networkSize);
+            obj.unitThreshold    = zeros(obj.networkSize,1);
+            obj.currentState     = zeros(obj.networkSize,1);
             obj.connectionMatrix = Connections.GenerateFull(obj.networkSize,0);
         end
         
-        % Generates a new pattern
-        % patternActivty: proportion of active units in the pattern
+        % Functions for generating and distorting patterns
+        % 1. Generate a single pattern
         function pattern = GeneratePattern(obj,patternActivity)
             if nargin == 1
                 patternActivity = 0.5;
@@ -54,6 +59,8 @@ classdef Hopfield < handle
                 pattern = (pattern + 1)./2;
             end
         end
+        
+        % 2. Generate a matrix of patterns
         function patternMatrix = GeneratePatternMatrix(obj, nPatterns, patternActivity)
             if nargin == 2
                 patternActivity = 0.5;
@@ -77,9 +84,9 @@ classdef Hopfield < handle
             end
         end
         
-        % Takes the input and flips the state of a randum number of units
-        % inputPattern: the pattern to be changed
-        % noiseLevel: proportion of units that will be flipped
+        % 3. Distorts a given pattern. Noiselevel should be a value between
+        % 0 and 1 that represents the proportion of units that are
+        % distorted
         function outputPattern = DistortPattern(obj, inputPattern, noiseLevel)
             flipIndices = randperm(length(inputPattern));
             flipIndices = flipIndices(1:round(noiseLevel*length(inputPattern)));
@@ -88,51 +95,61 @@ classdef Hopfield < handle
             if (obj.unitModel == 'S')
                 outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
             elseif (obj.unitModel == 'V')
-                outputPattern = (2.*outputPattern)-1;
-                outputPattern(flipIndices) = -1.*outputPattern(flipIndices);
-                outputPattern = (outputPattern+1)./2;
+                outputPattern(flipIndices) = -1.*outputPattern(flipIndices) + 1;
             end
         end
         
-        % Add the pattern nextPattern to the weight matrix
-        % C: normalization constant for  the weights, defaults to 1/N
-        function AddPattern(obj, nextPattern, C)
+        % Stores a single pattern in the network. 
+        function StorePattern(obj, nextPattern, C)
+            % Input checking and parameter configuration
             if nargin == 2
                 C = 1/length(nextPattern);
             end
             
-            % Check if pattern has correct length
             if obj.networkSize ~= length(nextPattern)
                 error('Pattern size not consistent with current weight matrix');
             end
             
-            % Pattern should be Nx1 vector
             if size(nextPattern,1) == 1
                 nextPattern = nextPattern';
             end
+            
+            % Store the pattern
+            obj.storedPatterns = [obj.storedPatterns; nextPattern'];         
             
             if strcmp(obj.activityNormalization,'on')
                 nextPattern = nextPattern-mean(nextPattern);
             end
             
-            obj.weightMatrix = obj.gamma.*obj.weightMatrix + C.*obj.connectionMatrix.*(nextPattern*nextPattern');
+            switch obj.learningRule
+                case 'Hebb'
+                    obj.weightMatrix = obj.gamma.*obj.weightMatrix + C.*obj.connectionMatrix.*(nextPattern*nextPattern');
+                case 'Storkey'
+                    obj.PerformStorkeyUpdate(nextPattern,C);
+                case 'Delta'
+                    obj.LearnDeltaPatterns(obj.storedPatterns);
+            end
             
-            % Check if clipping needs to be applied
+            % Post-processing of the weight matrix
             if strcmp(obj.clipMode,'clip')
                 obj.weightMatrix(obj.weightMatrix(:) < -obj.clipValue) = -obj.clipValue;
                 obj.weightMatrix(obj.weightMatrix(:) > obj.clipValue) = obj.clipValue;
-            end
-            
-            % Store the pattern
-            obj.storedPatterns = [obj.storedPatterns; nextPattern'];
+            end           
         end
-        function AddPatternMatrix(obj,patternMatrix,C)
+        
+        % Tries to store all the patterns in the patternMatrix in the
+        % network
+        function StorePatternMatrix(obj,patternMatrix,C)
             if nargin == 2
                 C = 1/size(patternMatrix,2);
             end
             
-            for i = 1:size(patternMatrix,1)
-                obj.AddPattern(patternMatrix(i,:),C);
+            if strcmp(obj.learningRule,'Delta')
+                obj.LearnDeltaPatterns(patternMatrix);
+            else
+                for i = 1:size(patternMatrix,1)
+                    obj.StorePattern(patternMatrix(i,:),C);
+                end
             end
         end
         
@@ -141,10 +158,10 @@ classdef Hopfield < handle
         % number of units that were updated.
         function trainingError = PerformDeltaUpdate(obj, inputPattern, learningRate, learningThreshold)
             if nargin <4
-                learningThreshold = 0;
+                learningThreshold = obj.deltaLearningThreshold;
             end
             if nargin < 3
-                learningRate = 1/length(inputPattern);
+                learningRate = obj.deltaLearningRate;
             end
             
             if obj.networkSize ~= length(inputPattern)
@@ -172,10 +189,10 @@ classdef Hopfield < handle
         % Add patterns from the input matrix using the delta learning rule
         function trainingError = LearnDeltaPatterns(obj, patternMatrix, learningRate, learningThreshold)
             if nargin <4
-                learningThreshold = 0;
+                learningThreshold = obj.deltaLearningThreshold;
             end
             if nargin < 3
-                learningRate = 1/length(inputPattern);
+                learningRate = obj.deltaLearningRate;
             end
             obj.storedPatterns = patternMatrix;
             
@@ -236,17 +253,7 @@ classdef Hopfield < handle
             obj.weightMatrix = obj.weightMatrix.*obj.connectionMatrix;
         end
         
-        function AddStorkeyPatterns(obj, patternMatrix,C)
-            nUnits = size(patternMatrix,2);
-            if nargin == 2
-                C = 1/nUnits;
-            end
-            
-            for i = 1:size(patternMatrix,2)
-                obj.PerformStorkeyUpdate(patternMatrix(i,:),C);
-            end
-        end
-        % Fetch and manipulate the weight matrix manually
+        % Functions for manipulating the weight matrix
         function ResetWeightMatrix(obj)
             obj.storedPatterns = [];
             obj.weightMatrix = zeros(obj.networkSize);
@@ -258,7 +265,8 @@ classdef Hopfield < handle
             obj.weightMatrix = weightMatrix;
         end
         
-        % Configure network parameters
+        % Network configuration functions
+        % 1. Set the connectivity matrix for the units
         function SetConnectionMatrix(obj, cm)
             if size(cm) ~= size(obj.weightMatrix)
                 error('Connection matrix dimensions do not match the weight matrix dimensions.');
@@ -266,6 +274,7 @@ classdef Hopfield < handle
             
             obj.connectionMatrix = cm;
         end
+        % 2. Set the unit model ( 'S' : [-1, 1] or 'V' : [0, 1])
         function SetUnitModel(obj,unitModel)
             if unitModel == 'S'
                 obj.unitModel = 'S';
@@ -275,18 +284,29 @@ classdef Hopfield < handle
                 obj.unitValues = [0 1];
             end
         end
+        % 3. Set gamma. This parameter controls the proportion of the
+        % original weight matrix that is retained in an update step
         function SetGamma(obj,g)
             obj.gamma = g;
         end
+        % 4. Set the threshold value for each unit. With a single input value
+        % each unit gets the same threshold. A vector with the same length
+        % as the number of units can also be provided to set an individual
+        % threshold for each unit
         function SetThreshold(obj,T)
             if length(T) == 1
-                obj.unitThreshold = T.*ones(1,obj.networkSize);
+                obj.unitThreshold = T.*ones(obj.networkSize,1);
             elseif length(T) == obj.networkSize
                 obj.unitThreshold = T;
+                if size(obj.unitThreshold,1)==1
+                    obj.unitThreshold = obj.unitThreshold';
+                end
             else
                 error('Length of T needs to be equal to one or to the number of units in the network');
             end
         end
+        % 5. Choose between 'sync' and 'async' for synchronous and
+        % asynchronous updating
         function SetUpdateMode(obj,updateMode)
             if strcmp(updateMode,'async')==1
                 obj.updateMode ='async';
@@ -297,6 +317,7 @@ classdef Hopfield < handle
                 obj.updateMode = 'async';
             end
         end
+        % 6. Controls if binary patterns should have mean activity of zero
         function SetActivityNormalization(obj, activityNormalization)
             activityNormalization = lower(activityNormalization);
             validModes = {'on','off'};
@@ -308,6 +329,7 @@ classdef Hopfield < handle
                 end
             end
         end
+        % 7. Set if weights should be restricted to a maximal value
         function EnableWeightClipping(obj, clipValue)
             obj.clipMode = 'clip';
             obj.clipValue = clipValue;
@@ -315,22 +337,26 @@ classdef Hopfield < handle
         function DisableWeightClipping(obj)
             obj.clipMode = 'noclip';
         end
+        % 8. Do not use stochasticity when updating network state
         function UseDeterministicDynamics(obj)
             obj.updateDynamics = 'deterministic';
         end
+        % 9. Use stochasticity. Beta corresponds to the inverse temperature
         function UseStochasticDynamics(obj,beta)
             obj.updateDynamics = 'stochastic';
             obj.beta = beta;
         end
+        % 10. Gets the current state of the network
         function currentState = GetCurrentState(obj)
             currentState = obj.currentState;
         end
+        % 11. Set parameters for gaussian noise that should be added to the
+        % network
         function SetInputNoise(obj, mu, sigma)
             obj.inputNoiseMean = mu;
             obj.inputNoiseSd   = sigma;
         end
-        
-        % Clamp the state of the model to a specific set of values
+        % 12. Clamp the state of the model to a specific set of values
         function ClampState(obj,newState)
             if length(newState) ~= obj.networkSize
                 error('Number of units does not correspond')
@@ -340,16 +366,39 @@ classdef Hopfield < handle
             end
             obj.currentState = newState;
         end
-        
+        % 13. Sets the learning rule to be used for adding new patters
+        function SetLearningRule(obj, newRule, param1,param2)
+            if  strcmpi(newRule,'Hebb')
+                obj.learningRule = 'Hebb';
+            elseif strcmpi(newRule,'Storkey')
+                obj.learningRule = 'Storkey';
+            elseif strcmpi(newRule,'Delta')
+                if nargin < 4
+                    obj.deltaLearningRate = 1/obj.networkSize;
+                else
+                    obj.deltaLearningRate = param2;
+                end
+                if nargin < 3
+                    obj.deltaLearningThreshold = 0;
+                else
+                    obj.deltaLearningThreshold = param1;
+                end
+                
+                obj.learningRule = 'Delta';
+            else
+                obj.learningRule = 'Hebb';
+                error('No valid learning rule. Using Hebb rule as default');
+            end
+                
+        end
         % Here we perform the state update of the hopfield network. Updates
         % are performed synchronously (i.e. all units at the same time), or
         % asynchronously (each unit in turn, but in random order)
-        function output = Iterate(obj, initialState)
+        function output = UpdateState(obj, initialState)
             threshold = obj.unitThreshold;
-            method = obj.updateMode;      
             obj.ClampState(initialState);
             
-            switch method
+            switch obj.updateMode
                 case 'sync'
                     inputPotential = obj.weightMatrix*obj.currentState';
                     inputPotential = inputPotential + obj.inputNoiseMean + obj.inputNoiseSd.*randn(size(inputPotential));
@@ -410,15 +459,39 @@ classdef Hopfield < handle
             it = 0;
             finalState = initialState;
             initialState = 0.*initialState;
-            while sum(initialState ~=  finalState) > 0
-                if it > obj.maxIterations
-                    display('Warning: maximum number of iterations exceeded');
-                    break
+                
+            if strcmp(obj.updateMode, 'sync')
+                notConverged = 1;
+                while notConverged == 1
+                    if it > obj.maxIterations
+                        display('Warning: maximum number of iterations exceeded');
+                        break
+                    end
+                    
+                    twoBackState = initialState;
+                    initialState = finalState;
+                    finalState = obj.UpdateState(initialState);
+                    it = it + 1;
+                    
+                    if sum(finalState~= initialState) == 0
+                        notConverged = 0;
+                    elseif sum(finalState ~= twoBackState) == 0
+                        display('Update cycle detected.');
+                        notConverged = 0;
+                    end
                 end
                 
-                initialState = finalState;
-                finalState = obj.Iterate(initialState);
-                it = it + 1;
+            else
+                while sum(initialState ~=  finalState) > 0
+                    if it > obj.maxIterations
+                        display('Warning: maximum number of iterations exceeded');
+                        break
+                    end
+
+                    initialState = finalState;
+                    finalState = obj.UpdateState(initialState);
+                    it = it + 1;
+                end
             end
         end
         
@@ -569,6 +642,9 @@ classdef Hopfield < handle
             end
         end
         
+        % Returns the overlap for each pattern in patternMatrix when the
+        % network is initialized with a noisy version of each pattern and
+        % allowed to settle in a stable state
         function [overlapVector, itVector] = TestRecall(obj,patternMatrix,noiseLevel)
             nPatterns = size(patternMatrix,1);
             
@@ -585,14 +661,24 @@ classdef Hopfield < handle
             end
         end
         
+        % Checks if the patterns given in testPattern are all stable states
+        % of the network. That is, after one update iteration the state of
+        % the network should not change
         function isStable = IsStablePattern(obj,testPattern)
-            output = obj.Iterate(testPattern);
+            nPatterns = size(testPattern,1);
+            isStable = zeros(1,nPatterns);
             
-            if sum(output==testPattern) == obj.networkSize
-                isStable = 1;
-            else
-                isStable = 0;
+            for i = 1:nPatterns
+                input = testPattern(i,:);
+                output = obj.UpdateState(input);
+            
+                if sum(output==input) == obj.networkSize
+                    isStable(i) = 1;
+                else
+                    isStable(i) = 0;
+                end
             end
+            
         end
     end
     

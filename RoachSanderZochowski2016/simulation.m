@@ -21,7 +21,7 @@ for loadIndex = 1:nLoads
     w(1)= 1;
     h.ResetWeightMatrix();
     for i = 1:P
-        h.AddPattern(p(i,:),w(i)/(N*sum(w)));
+        h.StorePattern(p(i,:),w(i)/(N*sum(w)));
     end
     
     for adaptationIndex = 1:nAdaptations
@@ -76,7 +76,7 @@ w(1) = 1.0;
 h.ResetWeightMatrix();
 h.UseStochasticDynamics(1/0.01);
 for i = 1:10
-    h.AddPattern(p(i,:),w(i)/(sum(w)*N));
+    h.StorePattern(p(i,:),w(i)/(sum(w)*N));
 end
 
 overlapData = zeros(3,2,nSteps);
@@ -116,8 +116,8 @@ for i = 1:3
     title(['A = ' num2str(A(i))])
     xlabel('Update step')
     ylabel('|m_u|')
-    plot(squeeze(overlapData(i,1,:)))
-    plot(squeeze(overlapData(i,2,:)))
+    plot(squeeze(overlapData(i,1,:)),'k')
+    plot(squeeze(overlapData(i,2,:)),'--k')
     legend('Strong','weak')
     set(gca,'YLim',[-0.2 1])
 end
@@ -142,7 +142,7 @@ for loadIndex = 1:nLoads
     w(1) = 1;
     h.ResetWeightMatrix()
     for i = 1:P
-        h.AddPattern(p(i,:),w(i)/(N*sum(w)));
+        h.StorePattern(p(i,:),w(i)/(N*sum(w)));
     end
     
     for tIndex = 1:nT
